@@ -8,7 +8,7 @@ Console.OutputEncoding = Encoding.UTF8;
 const string HelpEn = """
 stylo-neo: downloads the pages of a Neo smartpen and files them for note-taking apps.
 
-  stylo-neo sync [--mac AA:BB:..] [--notebook 3-27-738] [--erase]
+  stylo-neo sync [--mac AA:BB:..] [--notebook 3-27-738] [--erase] [--no-prompt]
                                     downloads the pen's pages (never erases by default);
                                     --notebook: a single notebook; --erase: only the notebooks
                                     whose end the pen confirmed
@@ -25,12 +25,13 @@ Common options: --data-dir <path>   (default: %STYLO_NEO_DATA%, else %USERPROFIL
                 --lang en|fr        language of messages (default: %STYLO_NEO_LANG%, else en)
 
 Exit codes: 0 ok · 1 unknown command or page · 2 error · 3 sync: at least one notebook incomplete
+            · 4 sync: the pen asks for a password that is not saved (--no-prompt, or no console)
 """;
 
 const string HelpFr = """
 stylo-neo : télécharge les pages d'un stylo Neo et les range pour les applications de prise de notes.
 
-  stylo-neo sync [--mac AA:BB:..] [--notebook 3-27-738] [--erase]
+  stylo-neo sync [--mac AA:BB:..] [--notebook 3-27-738] [--erase] [--no-prompt]
                                     télécharge les pages du stylo (n'efface jamais par défaut) ;
                                     --notebook : un seul carnet ; --erase : efface seulement
                                     les carnets dont le stylo a confirmé la fin
@@ -47,6 +48,7 @@ Options communes : --data-dir <chemin>  (par défaut : %STYLO_NEO_DATA%, sinon %
                    --lang en|fr         langue des messages (par défaut : %STYLO_NEO_LANG%, sinon en)
 
 Codes de sortie : 0 ok · 1 commande ou page inconnue · 2 erreur · 3 synchro : au moins un carnet incomplet
+                  · 4 synchro : le stylo demande un mot de passe non enregistré (--no-prompt, ou pas de console)
 """;
 
 string Help() => L.T(HelpEn, HelpFr);
@@ -98,7 +100,8 @@ try
                     $"--notebook expects a section-owner-notebook id, e.g. 3-27-738 (got: {notebook}).",
                     $"--notebook attend un identifiant section-propriétaire-carnet, ex. 3-27-738 (reçu : {notebook})."));
             var erase = Flag("--erase");
-            var sync = new PenSync(new SyncOptions(mac, erase, TimeSpan.FromSeconds(45), Notebook: notebook));
+            var noPrompt = Flag("--no-prompt");
+            var sync = new PenSync(new SyncOptions(mac, erase, TimeSpan.FromSeconds(45), Notebook: notebook, NoPrompt: noPrompt));
             var res = await sync.Run();
             // Received strokes are always kept, even when a notebook is incomplete.
             var r = store.Merge(res.Strokes);
@@ -181,6 +184,12 @@ try
             Console.WriteLine(Help());
             return 1;
     }
+}
+catch (PasswordNeededException e)
+{
+    Console.Error.WriteLine();
+    Console.Error.WriteLine(e.Message);
+    return 4;
 }
 catch (Exception e)
 {

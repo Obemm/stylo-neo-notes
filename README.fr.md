@@ -12,7 +12,9 @@ Vos notes manuscrites du **Neo smartpen M1**, transformées en **notes Obsidian*
   disposition, croquis gardés en SVG, une note par réunion ou par sujet plus une note du jour, comptes rendus
   rattachés à votre agenda (facultatif), tags. En cas de doute, il l'écrit **dans la note** ; vous corrigez dans
   Obsidian, et il apprend de vos corrections (glossaire, tags) sans jamais réécrire votre texte.
-- `scripts/` : un raccourci sur le bureau : *1 = charger les notes du stylo*, *2 = intégrer mes corrections*.
+- `scripts/` : une fenêtre sur le bureau (`app.ps1`) : synchro + conversion, convertir sans synchro, intégrer mes
+  corrections, ouvrir la note du jour ou le journal des conversions, progression en direct ; `run.ps1` fait la même
+  chose en console, pour l'automatisation.
 
 > Aujourd'hui la conversion passe par [Claude Code](https://claude.com/claude-code). Le choix d'un autre LLM
 > (API Anthropic, API compatibles OpenAI, modèles locaux par Ollama) est prévu.
@@ -53,12 +55,15 @@ notes sont écrites quand même, sans rattachement aux réunions.
 
 ## Utiliser
 1. Stylo allumé (voyant bleu), Bluetooth du téléphone coupé (l'appli Neo garderait le stylo connecté ou le viderait).
-2. Double-clic sur le raccourci, Entrée : synchro du stylo (la première fois, il demande son mot de passe, à taper
-   dans cette fenêtre seulement ; il peut être gardé dans le Gestionnaire d'identification Windows), puis
-   conversion des nouvelles pages par Claude Code.
+2. Double-clic sur le raccourci : une fenêtre s'ouvre. **Synchro + conversion** (tous les carnets ou un seul) :
+   synchro du stylo, puis conversion des nouvelles pages par Claude Code ; progression en direct, **Arrêter**
+   interrompt. Le mot de passe du stylo ne se tape jamais dans la fenêtre : s'il n'est pas encore enregistré, une
+   console s'ouvre pour le saisir (il peut alors être gardé dans le Gestionnaire d'identification Windows), puis
+   la conversion reprend dans la fenêtre.
 3. Relire dans Obsidian. Les doutes sont dans un encadré **« À trancher »** en tête de chaque note : corriger le
    texte, ou répondre dans la ligne du doute (« → oui », « → c'est DLQ »).
-4. Double-clic, **2** : vos corrections sont intégrées (doutes levés, glossaire et tags mis à jour).
+4. **Intégrer mes corrections** : doutes levés, glossaire et tags mis à jour. **Convertir sans synchro** convertit
+   ce qui est déjà téléchargé ; les deux derniers boutons ouvrent la note du jour et le journal des conversions.
 
 En session, ouvrir le dépôt dans Claude Code et dire « convertis mes notes du stylo » (`/pen-notes`).
 
@@ -67,7 +72,7 @@ Signes reconnus sur le papier : `M:` ou `R: titre` en haut de page = réunion ; 
 = tag ; ☐ ou `→ Nom` = tâche.
 
 ## L'outil du stylo seul
-Commandes : `sync [--mac] [--notebook 3-27-738] [--erase]`, `pending [--json]`, `mark-done <clé>`,
+Commandes : `sync [--mac] [--notebook 3-27-738] [--erase] [--no-prompt]`, `pending [--json]`, `mark-done <clé>`,
 `listen [--seconds 45]`, `forget-password`, `render`, `log`, `migrate` (détail dans le [README anglais](README.md)).
 Options communes : `--data-dir <chemin>` (sinon `STYLO_NEO_DATA`, sinon `Documents\StyloNeo`), `--lang en|fr` (sinon `STYLO_NEO_LANG`, sinon `en`).
 

@@ -209,3 +209,18 @@ def test_migrate_vault(env, capsys):
     assert A not in states(capsys)  # note and reference migrated alike: no correction appears
 
     assert json.loads(run(capsys, "migrate-vault")[1])["changed"] == []  # idempotent
+
+
+def test_status_without_executable(env, capsys):
+    """The window's summary still answers when the pen tool is missing: pending unknown, error given."""
+    write(env[2] / "pages" / "3-27-551" / "p007.json", "{}")
+    (env[2] / "pages" / "3-27-738").mkdir(parents=True)
+    write(env[0] / A, NOTE)
+    run(capsys, "reference", A)
+    write(env[0] / A, NOTE.replace("XQZ[?] for", "XYZ for"))
+    write(env[0] / "Journal" / "2030-01-15.md", "# Day\n")
+    code, out = run(capsys, "status")
+    s = json.loads(out)
+    assert code == 0
+    assert (s["pending"], s["corrected"], s["no_reference"]) == (None, 1, 1)
+    assert s["notebooks"] == ["3-27-551", "3-27-738"] and "pen executable not found" in s["error"]

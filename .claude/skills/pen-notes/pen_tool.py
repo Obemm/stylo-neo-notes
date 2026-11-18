@@ -13,6 +13,7 @@ the pen, and writes only into the vault (attachments), the reference copies and 
     python pen_tool.py forget <note.md>           # drop the copy of a renamed or deleted note
     python pen_tool.py changed                    # notes corrected since their copy (JSON + diff)
     python pen_tool.py config                     # resolved configuration (JSON)
+    python pen_tool.py status                     # pages pending, notes corrected, notebooks (JSON, for the window)
     python pen_tool.py migrate-vault [--dry-run]  # rename legacy frontmatter keys (stylo_* -> pen_*)
 
 <key> = "3-27-551/p007". <note.md> = path relative to the vault, inside the notebooks, journal or
@@ -178,7 +179,7 @@ def _diff(before: str, after: str, old: str, new: str) -> str:
     return "\n".join(difflib.unified_diff(before.splitlines(), after.splitlines(), old, new, n=2, lineterm=""))
 
 
-def changed() -> int:
+def _changed() -> tuple[Path, list[dict]]:
     """Compare each tracked note with its copy: modified, renamed, deleted, or without reference."""
     c = _conf()
     vault = c.require_vault()
@@ -205,7 +206,34 @@ def changed() -> int:
         else:
             result.append({"note": rel, "state": "deleted"})
     result += [{"note": r, "state": "no_reference"} for r in without_copy]
+    return vault, result
+
+
+def changed() -> int:
+    vault, result = _changed()
     json.dump({"vault": str(vault), "notes": result}, sys.stdout, ensure_ascii=False, indent=1)
+    print()
+    return 0
+
+
+def status() -> int:
+    """Summary for the desktop window: pages pending, notes corrected by the user, known notebooks."""
+    c = _conf()
+    _, notes = _changed()
+    corrected = sum(1 for n in notes if n["state"] in ("modified", "renamed", "deleted"))
+    pending_count, error = None, None
+    try:
+        r = _pen("pending", "--json")
+        if r.returncode == 0:
+            pending_count = len(json.loads(r.stdout)["pages"])
+        else:
+            error = (r.stderr or r.stdout).strip()[:300]
+    except Refused as refused:
+        error = str(refused)
+    pages = c.require_data_dir() / "pages"
+    notebooks = sorted(d.name for d in pages.iterdir() if d.is_dir()) if pages.is_dir() else []
+    json.dump({"pending": pending_count, "corrected": corrected, "no_reference": len(notes) - corrected,
+               "notebooks": notebooks, "error": error}, sys.stdout, ensure_ascii=False, indent=1)
     print()
     return 0
 
@@ -269,6 +297,8 @@ def main(argv: list[str]) -> int:
             return forget(args[0])
         if cmd == "changed" and not args:
             return changed()
+        if cmd == "status" and not args:
+            return status()
         if cmd == "config" and not args:
             return show_config()
         if cmd == "migrate-vault" and not args:

@@ -4,7 +4,11 @@ using StyloNeo.Core;
 
 namespace StyloNeo;
 
-public sealed record SyncOptions(string? Mac, bool Erase, TimeSpan SearchTimeout, TimeSpan? Listen = null, string? Notebook = null);
+public sealed record SyncOptions(string? Mac, bool Erase, TimeSpan SearchTimeout, TimeSpan? Listen = null, string? Notebook = null,
+                                 bool NoPrompt = false);
+
+/// <summary>The pen asks for a password that is not saved and cannot be typed here (--no-prompt or no console).</summary>
+public sealed class PasswordNeededException(string message) : InvalidOperationException(message);
 
 /// <summary>Strokes received (even partial) and a report per notebook.</summary>
 public sealed record SyncResult(IReadOnlyList<ReceivedStroke> Strokes, IReadOnlyList<NotebookReport> Reports);
@@ -126,9 +130,9 @@ public sealed class PenSync
                                   "Le mot de passe enregistré a été refusé par le stylo : retiré du Gestionnaire d'identification Windows."));
         }
 
-        if (Console.IsInputRedirected)
+        if (Console.IsInputRedirected || _opt.NoPrompt)
         {
-            _authenticated.TrySetException(new InvalidOperationException(
+            _authenticated.TrySetException(new PasswordNeededException(
                 L.T("The pen asks for its password: run stylo-neo in a real terminal to type it.",
                     "Le stylo demande son mot de passe : lancez stylo-neo dans un vrai terminal pour le saisir.")));
             return;

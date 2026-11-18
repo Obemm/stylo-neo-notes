@@ -12,7 +12,8 @@ Your **Neo smartpen M1** handwriting, turned into **Obsidian notes** — without
   sketches kept as SVG, one note per meeting or topic plus a daily note, meeting minutes matched to your
   calendar (optional), tags. When in doubt, it writes the doubt **in the note**; you correct in Obsidian, and it
   learns your corrections (glossary, tags) without ever rewriting your text.
-- `scripts/` — a desktop shortcut: *1 = load the pen notes*, *2 = integrate my corrections*.
+- `scripts/` — a desktop window (`app.ps1`): sync + conversion, convert without sync, integrate my corrections,
+  open today's note or the conversion log, with live progress; `run.ps1` is the same in a console, for automation.
 
 > Today the conversion runs through [Claude Code](https://claude.com/claude-code). Choosing another LLM
 > (Anthropic API, OpenAI-compatible APIs, local models through Ollama) is on the roadmap.
@@ -51,11 +52,14 @@ written, just not attached to meetings.
 
 ## Use
 1. Pen on (blue light), Bluetooth of your phone off (the Neo app would keep the pen connected or empty it).
-2. Double-click **Pen notes**, Enter: the pen syncs (the first time it asks for the pen password, typed in that
-   window only; it can be stored in Windows Credential Manager), then Claude Code converts the new pages.
+2. Double-click **Pen notes**: a window opens. Click **Sync + conversion** (all notebooks, or pick one): the pen
+   syncs, then Claude Code converts the new pages; progress is shown live, **Stop** interrupts. The pen password is
+   never typed in the window: if it is not saved yet, a console opens for it (it can then be stored in Windows
+   Credential Manager) and the conversion goes on in the window.
 3. Read the notes in Obsidian. Doubts are in a **"To decide"** box at the top of each note: fix the text, or
    answer in the doubt's line ("→ yes", "→ it's DLQ").
-4. Double-click **Pen notes**, **2**: your corrections are integrated (doubts settled, glossary and tags updated).
+4. **Integrate my corrections**: doubts settled, glossary and tags updated. **Convert without sync** converts what
+   is already downloaded; the last two buttons open today's note and the conversion log in Obsidian.
 
 Interactively, open the repository in Claude Code and say "convert my pen notes" (`/pen-notes`).
 
@@ -66,7 +70,7 @@ a slide mock-up; `!` in the margin = important; `?` = open question; boxed text 
 ## The pen tool alone
 | Command | What it does |
 |---|---|
-| `stylo-neo sync [--mac AA:BB:…] [--notebook 3-27-738] [--erase]` | downloads all notebooks (or one) and prints a per-notebook report; exit code 3 if a notebook did not arrive in full. `--erase` only erases notebooks whose end the pen confirmed |
+| `stylo-neo sync [--mac AA:BB:…] [--notebook 3-27-738] [--erase] [--no-prompt]` | downloads all notebooks (or one) and prints a per-notebook report; exit code 3 if a notebook did not arrive in full. `--erase` only erases notebooks whose end the pen confirmed. `--no-prompt`: exit code 4 instead of asking for a password that is not saved |
 | `stylo-neo pending [--json]` | pages new or modified, not converted yet |
 | `stylo-neo mark-done <key>` | the note of this page is up to date (e.g. `3-27-738/p012`) |
 | `stylo-neo listen [--seconds 45]` | connection diagnostic |

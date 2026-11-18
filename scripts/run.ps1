@@ -19,6 +19,8 @@ param(
     [string]$Choice,               # 1 = load the pen, 2 = integrate my corrections (asked otherwise)
     [string]$Config,               # configuration file (otherwise STYLO_NEO_CONFIG, config.toml, %APPDATA%)
     [switch]$NoSync,               # convert what is already pending, without touching the pen
+    [string]$Notebook,             # sync a single notebook (e.g. 3-27-738)
+    [switch]$NoPause,              # used by the desktop window (app.ps1): no question, no "press Enter" at the end
     [string]$Prompt                # tests: replaces the instruction sent to Claude
 )
 $ErrorActionPreference = 'Stop'
@@ -34,16 +36,17 @@ $Tool  = Join-Path $Skill 'pen_tool.py'
 $Fr = $false
 function T($en, $fr) { if ($script:Fr) { $fr } else { $en } }
 function Step($n, $text) { Write-Host ""; Write-Host "[$n] $text" -ForegroundColor Cyan }
-function Done($message, $colour = 'Yellow') {
+# Exit codes (read by app.ps1): 0 done or nothing to do, 1 error, 3 notebook incomplete, 4 pen password needed.
+function Done($message, $colour = 'Yellow', $code = 0) {
     Write-Host ""; Write-Host $message -ForegroundColor $colour
-    Write-Host ""; Read-Host (T 'Press Enter to close' 'Entrée pour fermer') | Out-Null
-    exit
+    if (-not $NoPause) { Write-Host ""; Read-Host (T 'Press Enter to close' 'Entrée pour fermer') | Out-Null }
+    exit $code
 }
 function Posix($path) { ($path -replace '\\', '/') }
 
 $host.UI.RawUI.WindowTitle = 'Pen notes'
 $cfgText = python $Tool config | Out-String
-if ($LASTEXITCODE -ne 0) { Done "Configuration error (see above). Copy config.example.toml to config.toml and set vault.path." 'Red' }
+if ($LASTEXITCODE -ne 0) { Done "Configuration error (see above). Copy config.example.toml to config.toml and set vault.path." 'Red' 1 }
 $cfg   = $cfgText | ConvertFrom-Json
 $Fr    = $cfg.language -eq 'fr'
 $env:STYLO_NEO_LANG = $cfg.language
@@ -52,7 +55,7 @@ $Vault = $cfg.vault
 $Exe   = $cfg.exe
 $Data  = $cfg.data_dir
 $Log   = $cfg.paths.log_file
-foreach ($p in @($Exe, $Vault)) { if (-not $p -or -not (Test-Path $p)) { Done (T "Not found: $p" "Introuvable : $p") 'Red' } }
+foreach ($p in @($Exe, $Vault)) { if (-not $p -or -not (Test-Path $p)) { Done (T "Not found: $p" "Introuvable : $p") 'Red' 1 } }
 $Rotated  = $cfg.rotated_dir
 $agendaOn = $cfg.agenda.source -eq 'mcp'
 
@@ -86,7 +89,7 @@ function Invoke-Claude($instruction, $title) {
     New-Item -ItemType Directory -Force (Split-Path $Log) | Out-Null
     if (-not (Test-Path $Log)) { "# $([IO.Path]::GetFileNameWithoutExtension($Log))`n" | Set-Content -Encoding utf8 $Log }
     "`n## $stamp — $title`n`n$($text.Trim())`n" | Add-Content -Encoding utf8 $Log
-    if ($code -ne 0) { Done (T "Claude stopped with an error (code $code): see the message above." "Claude s'est arrêté en erreur (code $code) : voir le message ci-dessus.") 'Red' }
+    if ($code -ne 0) { Done (T "Claude stopped with an error (code $code): see the message above." "Claude s'est arrêté en erreur (code $code) : voir le message ci-dessus.") 'Red' 1 }
 }
 
 # Calendar session, checked by the configured command if any. Returns $true when the calendar answers.
@@ -111,6 +114,7 @@ $rules = "Only allowed command: python `"$(Posix $Tool)`" <subcommand>. The vaul
          "Your last message is the summary, in the notes' language ($($cfg.language)), with no question."
 
 # --- choice -------------------------------------------------------------------------------
+if (-not $Choice -and $NoPause) { $Choice = '1' }
 if (-not $Choice) {
     Write-Host ""
     Write-Host (T "  1  Load the pen notes (sync, then conversion)" "  1  Charger les notes du stylo (synchro puis conversion)")
@@ -149,11 +153,15 @@ elseif (-not $calendarOk) {
 # --- 2. sync ------------------------------------------------------------------------------
 Step 2 (T 'Pen sync (pen on, blue light, not connected to the phone)' 'Synchro du stylo (allumé, voyant bleu, déconnecté du téléphone)')
 if ($NoSync) { Write-Host (T 'Sync skipped (-NoSync).' 'Synchro sautée (-NoSync).') } else {
-    & $Exe sync --data-dir $Data
+    $syncArgs = @('sync', '--data-dir', $Data)
+    if ($Notebook) { $syncArgs += @('--notebook', $Notebook) }
+    if ($NoPause) { $syncArgs += '--no-prompt' }   # the window never takes the pen password
+    & $Exe @syncArgs
     switch ($LASTEXITCODE) {
         0 { }
-        3 { Done (T "A notebook did not arrive in full: run the shortcut again (nothing was converted)." "Un carnet n'est pas arrivé en entier : relancez le raccourci (rien n'a été converti).") }
-        default { Done (T "Sync failed (code $LASTEXITCODE): is the pen on and in range? Nothing was converted." "Synchro en échec (code $LASTEXITCODE) : stylo allumé et à portée ? Rien n'a été converti.") 'Red' }
+        3 { Done (T "A notebook did not arrive in full: run the shortcut again (nothing was converted)." "Un carnet n'est pas arrivé en entier : relancez le raccourci (rien n'a été converti).") 'Yellow' 3 }
+        4 { Done (T "The pen asks for its password: type it in the console that opens." "Le stylo demande son mot de passe : tapez-le dans la console qui s'ouvre.") 'Yellow' 4 }
+        default { Done (T "Sync failed (code $LASTEXITCODE): is the pen on and in range? Nothing was converted." "Synchro en échec (code $LASTEXITCODE) : stylo allumé et à portée ? Rien n'a été converti.") 'Red' 1 }
     }
 }
 $pending = @((python $Tool pending | Out-String | ConvertFrom-Json).pages)
