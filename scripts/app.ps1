@@ -78,10 +78,17 @@ $cmbNotebook.DropDownStyle = 'DropDownList'; $cmbNotebook.Width = 170
 $cmbNotebook.Margin = New-Object System.Windows.Forms.Padding(0, 4, 6, 4)
 [void]$cmbNotebook.Items.Add((T 'All notebooks' 'Tous les carnets')); $cmbNotebook.SelectedIndex = 0
 $btnSync    = New-Button (T 'Sync + conversion' 'Synchro + conversion')
+$chkErase   = New-Object System.Windows.Forms.CheckBox
+$chkErase.Text = T 'Erase from the pen after the sync' 'Effacer du stylo après la synchro'
+$chkErase.AutoSize = $true; $chkErase.Checked = $false
+$chkErase.Margin = New-Object System.Windows.Forms.Padding(0, 7, 12, 4)
+$tips = New-Object System.Windows.Forms.ToolTip
+$tips.SetToolTip($chkErase, (T 'Only notebooks fully received, and only once saved on the PC. Makes the next syncs faster.' `
+                               'Seulement les carnets reçus en entier, et seulement une fois enregistrés sur le PC. Les synchros suivantes sont plus rapides.'))
 $btnConvert = New-Button (T 'Convert without sync' 'Convertir sans synchro')
 $btnFix     = New-Button (T 'Integrate my corrections' 'Intégrer mes corrections')
 $btnStop    = New-Button (T 'Stop' 'Arrêter'); $btnStop.Enabled = $false
-$actions.Controls.AddRange(@($cmbNotebook, $btnSync, $btnConvert, $btnFix, $btnStop))
+$actions.Controls.AddRange(@($cmbNotebook, $btnSync, $chkErase, $btnConvert, $btnFix, $btnStop))
 
 $links = New-Object System.Windows.Forms.FlowLayoutPanel
 $links.Dock = 'Top'; $links.AutoSize = $true; $links.Padding = New-Object System.Windows.Forms.Padding(8, 0, 8, 6)
@@ -151,7 +158,7 @@ $timer.Add_Tick({
 })
 
 function Set-Busy($busy) {
-    foreach ($b in @($btnSync, $btnConvert, $btnFix, $btnRefresh, $cmbNotebook)) { $b.Enabled = -not $busy }
+    foreach ($b in @($btnSync, $btnConvert, $btnFix, $btnRefresh, $cmbNotebook, $chkErase)) { $b.Enabled = -not $busy }
     $btnStop.Enabled = $busy
     $form.Cursor = if ($busy) { 'AppStarting' } else { 'Default' }
 }
@@ -199,6 +206,7 @@ function Start-Run([string[]]$runArgs, $title) {
                          '→ Tapez le mot de passe du stylo dans la console qui s''ouvre ; la conversion reprendra ici.')
             $syncArgs = "& '$($cfg.exe)' sync --data-dir '$($cfg.data_dir)'"
             if ($script:notebook) { $syncArgs += " --notebook $script:notebook" }
+            if ($chkErase.Checked) { $syncArgs += ' --erase-received' }
             $syncArgs += "; Read-Host '$(T 'Press Enter to close' 'Entrée pour fermer')'"
             $script:afterConsole = {
                 param($c)
@@ -216,6 +224,7 @@ function Start-Run([string[]]$runArgs, $title) {
 $btnSync.Add_Click({
     $script:notebook = if ($cmbNotebook.SelectedIndex -gt 0) { [string]$cmbNotebook.SelectedItem } else { $null }
     $a = @('-Choice', '1'); if ($script:notebook) { $a += @('-Notebook', $script:notebook) }
+    if ($chkErase.Checked) { $a += '-Erase' }
     Start-Run $a (T 'Sync + conversion' 'Synchro + conversion')
 })
 $btnConvert.Add_Click({ $script:notebook = $null; Start-Run @('-Choice', '1', '-NoSync') (T 'Convert without sync' 'Conversion sans synchro') })

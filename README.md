@@ -53,7 +53,8 @@ written, just not attached to meetings.
 ## Use
 1. Pen on (blue light), Bluetooth of your phone off (the Neo app would keep the pen connected or empty it).
 2. Double-click **Pen notes**: a window opens. Click **Sync + conversion** (all notebooks, or pick one): the pen
-   syncs, then Claude Code converts the new pages; progress is shown live, **Stop** interrupts. The pen password is
+   syncs, then Claude Code converts the new pages; progress is shown live, **Stop** interrupts. Tick **Erase from the
+   pen after the sync** to empty the pen of the notebooks fully received (only once saved on the PC): next syncs get faster. The pen password is
    never typed in the window: if it is not saved yet, a console opens for it (it can then be stored in Windows
    Credential Manager) and the conversion goes on in the window.
 3. Read the notes in Obsidian. Doubts are in a **"To decide"** box at the top of each note: fix the text, or
@@ -70,7 +71,7 @@ a slide mock-up; `!` in the margin = important; `?` = open question; boxed text 
 ## The pen tool alone
 | Command | What it does |
 |---|---|
-| `stylo-neo sync [--mac AA:BB:…] [--notebook 3-27-738] [--erase] [--no-prompt]` | downloads all notebooks (or one) and prints a per-notebook report; exit code 3 if a notebook did not arrive in full. `--erase` only erases notebooks whose end the pen confirmed. `--no-prompt`: exit code 4 instead of asking for a password that is not saved |
+| `stylo-neo sync [--mac AA:BB:…] [--notebook 3-27-738] [--erase \| --erase-received] [--no-prompt]` | downloads all notebooks (or one) and prints a per-notebook report; exit code 3 if a notebook did not arrive in full. Erasing always comes last, once the strokes are saved: `--erase` only notebooks whose end the pen confirmed, `--erase-received` also those whose strokes all arrived without the end marker (some pens never send it for large notebooks); an incomplete notebook is never erased. `--no-prompt`: exit code 4 instead of asking for a password that is not saved |
 | `stylo-neo pending [--json]` | pages new or modified, not converted yet |
 | `stylo-neo mark-done <key>` | the note of this page is up to date (e.g. `3-27-738/p012`) |
 | `stylo-neo listen [--seconds 45]` | connection diagnostic |
@@ -83,8 +84,9 @@ Common options: `--data-dir <path>` (else `STYLO_NEO_DATA`, else `Documents\Styl
 Data layout: `journal.json` and `pages/<section>-<owner>-<notebook>/pNNN.json|svg|png`.
 
 ## Safety
-- **Erasing**: the SDK erases by default after download; this tool never does unless `--erase`, and then only
-  notebooks whose transfer end the pen confirmed. A V1-protocol pen always erases: the tool refuses without
+- **Erasing**: the SDK erases by default after download; this tool never does unless asked (`--erase`,
+  `--erase-received`, or the window's box), and then only after the strokes are saved to disk, and never an
+  incomplete notebook. A V1-protocol pen always erases: the tool refuses without
   `--erase`.
 - **Password**: too many wrong attempts reset the pen; the tool stops while 3 attempts remain. The password is
   never written to disk or logs.

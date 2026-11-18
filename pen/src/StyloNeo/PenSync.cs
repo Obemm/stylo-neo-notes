@@ -4,8 +4,12 @@ using StyloNeo.Core;
 
 namespace StyloNeo;
 
+/// <param name="Erase">erase from the pen the notebooks whose end the pen confirmed, once saved to disk</param>
+/// <param name="EraseReceived">also erase a notebook whose end marker never came but whose announced strokes all arrived</param>
+/// <param name="SaveBeforeErase">writes the received strokes to disk; nothing is erased unless it returns true</param>
 public sealed record SyncOptions(string? Mac, bool Erase, TimeSpan SearchTimeout, TimeSpan? Listen = null, string? Notebook = null,
-                                 bool NoPrompt = false);
+                                 bool NoPrompt = false, bool EraseReceived = false,
+                                 Func<IReadOnlyList<ReceivedStroke>, bool>? SaveBeforeErase = null);
 
 /// <summary>The pen asks for a password that is not saved and cannot be typed here (--no-prompt or no console).</summary>
 public sealed class PasswordNeededException(string message) : InvalidOperationException(message);
@@ -266,6 +270,7 @@ public sealed class PenSync
                 notebooks = chosen;
             }
 
+            var downloaded = new List<(OfflineDataInfo Info, NotebookReport Report)>();
             foreach (var c in notebooks)
             {
                 if (_disconnected)
@@ -273,8 +278,11 @@ public sealed class PenSync
                     reports.Add(new NotebookReport(Id(c), NotebookState.NotAttempted, 0, 0));
                     continue;
                 }
-                reports.Add(await DownloadNotebook(c, pen.Protocol));
+                var report = await DownloadNotebook(c, pen.Protocol);
+                reports.Add(report);
+                downloaded.Add((c, report));
             }
+            if (_opt.Erase && pen.Protocol != Protocols.V1) await EraseSaved(downloaded);
         }
         finally
         {
@@ -287,6 +295,60 @@ public sealed class PenSync
     private static string Id(OfflineDataInfo c) => $"{c.Section}-{c.Owner}-{c.Note}";
 
     /// <summary>
+    /// Erasing comes last, after every notebook is downloaded AND the strokes are written to disk: a notebook is
+    /// erased only if the save succeeded and the notebook is eligible (end confirmed, or with EraseReceived all
+    /// announced strokes received). An incomplete notebook is never erased.
+    /// </summary>
+    private async Task EraseSaved(List<(OfflineDataInfo Info, NotebookReport Report)> downloaded)
+    {
+        var eligible = downloaded.Where(d => d.Report.EraseAllowed || (_opt.EraseReceived && d.Report.AllReceived)).ToList();
+        foreach (var d in downloaded.Except(eligible))
+            Console.WriteLine(L.T($"  Notebook {d.Report.Notebook} not erased: {d.Report.Label}.",
+                                  $"  Carnet {d.Report.Notebook} non effacé : {d.Report.Label}."));
+        if (eligible.Count == 0) return;
+        List<ReceivedStroke> strokes;
+        lock (_lock) strokes = _received.ToList();
+        bool saved;
+        try { saved = _opt.SaveBeforeErase?.Invoke(strokes) ?? false; }
+        catch (Exception e)
+        {
+            Console.WriteLine(L.T($"  Saving failed ({e.Message}): nothing erased from the pen.",
+                                  $"  Enregistrement en échec ({e.Message}) : rien n'est effacé du stylo."));
+            return;
+        }
+        if (!saved)
+        {
+            Console.WriteLine(L.T("  Strokes not saved: nothing erased from the pen.",
+                                  "  Traits non enregistrés : rien n'est effacé du stylo."));
+            return;
+        }
+        foreach (var (c, report) in eligible)
+        {
+            if (_disconnected)
+            {
+                Console.WriteLine(L.T($"  Notebook {report.Notebook} not erased: the pen disconnected.",
+                                      $"  Carnet {report.Notebook} non effacé : le stylo s'est déconnecté."));
+                continue;
+            }
+            _erased = NewTcs<bool>();
+            _ctrl.RequestRemoveOfflineData(c.Section, c.Owner, new[] { c.Note });
+            try
+            {
+                bool ok = await _erased.Task.WaitAsync(TimeSpan.FromSeconds(15));
+                Console.WriteLine(ok
+                    ? L.T($"  Notebook {report.Notebook} erased from the pen (saved on the PC).",
+                          $"  Carnet {report.Notebook} effacé du stylo (enregistré sur le PC).")
+                    : L.T($"  The pen refused to erase notebook {report.Notebook}.", $"  Le stylo a refusé d'effacer le carnet {report.Notebook}."));
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(L.T($"  Erasing notebook {report.Notebook} not confirmed: {e.Message}",
+                                      $"  Effacement du carnet {report.Notebook} non confirmé : {e.Message}"));
+            }
+        }
+    }
+
+    /// <summary>
     /// Downloads a notebook without asking the pen to erase at the end of the transfer: with --erase,
     /// erasing is requested separately, and only if the pen confirmed the end (protocol V2).
     /// </summary>
@@ -295,7 +357,7 @@ public sealed class PenSync
         // In V1 the SDK always erases at the end of the transfer (refused above without --erase).
         bool eraseAtEnd = protocol == Protocols.V1;
         Console.WriteLine(L.T($"Downloading notebook {Id(c)}", $"Téléchargement du carnet {Id(c)}") +
-                          (_opt.Erase ? L.T(" (erased if the end is confirmed)", " (effacé si la fin est confirmée)")
+                          (_opt.Erase ? L.T(" (erased at the end, once saved)", " (effacé à la fin, une fois enregistré)")
                                       : L.T(" (no erase)", " (sans effacement)")));
         _download = NewTcs<bool>();
         _receivedInNotebook = 0; _totalInNotebook = 0;
@@ -311,29 +373,6 @@ public sealed class PenSync
                                         _receivedInNotebook, _totalInNotebook);
         Console.WriteLine(L.T($"  Notebook {report.Notebook}: {report.Label}", $"  Carnet {report.Notebook} : {report.Label}"));
 
-        if (_opt.Erase && !eraseAtEnd)
-        {
-            if (!report.EraseAllowed)
-                Console.WriteLine(L.T($"  Notebook {report.Notebook} not erased: its end was not confirmed by the pen.",
-                                      $"  Carnet {report.Notebook} non effacé : sa fin n'a pas été confirmée par le stylo."));
-            else if (!_disconnected)
-            {
-                _erased = NewTcs<bool>();
-                _ctrl.RequestRemoveOfflineData(c.Section, c.Owner, new[] { c.Note });
-                try
-                {
-                    bool ok = await _erased.Task.WaitAsync(TimeSpan.FromSeconds(15));
-                    Console.WriteLine(ok
-                        ? L.T($"  Notebook {report.Notebook} erased from the pen.", $"  Carnet {report.Notebook} effacé du stylo.")
-                        : L.T($"  The pen refused to erase notebook {report.Notebook}.", $"  Le stylo a refusé d'effacer le carnet {report.Notebook}."));
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine(L.T($"  Erasing notebook {report.Notebook} not confirmed: {e.Message}",
-                                          $"  Effacement du carnet {report.Notebook} non confirmé : {e.Message}"));
-                }
-            }
-        }
         return report;
     }
 

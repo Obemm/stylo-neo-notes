@@ -30,3 +30,11 @@
   another notebook alone.
 - 2026-11-12: USB charging does not change anything for a stuck transfer (battery read as 128 % while charging).
 - 2026-11-12: the Neo phone app empties the pen on import: do not use it for diagnosis.
+- Erasing must come **after** saving: erasing each notebook right after its download, before the strokes were
+  written to disk, left a window where a crash would lose pages. Erasing is now the last step of a sync, and only
+  if the save succeeded.
+- A large notebook whose end marker never comes cannot be erased with `--erase`: `--erase-received` accepts it when
+  every announced stroke arrived. First run on a real pen: 2,173 strokes received, notebook erased, next syncs only
+  bring new pages.
+- The pen also sends **empty strokes** (no point): they are ignored when saving, so the count saved is lower than the
+  count received (2,173 received, 2,125 with ink). Not a loss.

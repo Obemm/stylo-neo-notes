@@ -20,6 +20,9 @@ public sealed record NotebookReport(string Notebook, NotebookState State, int Re
     /// <summary>Only a notebook whose end the pen confirmed may be erased.</summary>
     public bool EraseAllowed => State == NotebookState.Complete;
 
+    /// <summary>Every stroke the pen announced arrived (end confirmed or not): eligible for --erase-received.</summary>
+    public bool AllReceived => (State is NotebookState.Complete or NotebookState.EndNotConfirmed) && Total > 0 && Received >= Total;
+
     public string Label => State switch
     {
         NotebookState.Complete => L.T($"received ({Received} strokes)", $"reçu ({Received} traits)"),

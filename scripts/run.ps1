@@ -20,6 +20,7 @@ param(
     [string]$Config,               # configuration file (otherwise STYLO_NEO_CONFIG, config.toml, %APPDATA%)
     [switch]$NoSync,               # convert what is already pending, without touching the pen
     [string]$Notebook,             # sync a single notebook (e.g. 3-27-738)
+    [switch]$Erase,                # erase from the pen the notebooks fully received, once saved (--erase-received)
     [switch]$NoPause,              # used by the desktop window (app.ps1): no question, no "press Enter" at the end
     [string]$Prompt                # tests: replaces the instruction sent to Claude
 )
@@ -155,6 +156,7 @@ Step 2 (T 'Pen sync (pen on, blue light, not connected to the phone)' 'Synchro d
 if ($NoSync) { Write-Host (T 'Sync skipped (-NoSync).' 'Synchro sautée (-NoSync).') } else {
     $syncArgs = @('sync', '--data-dir', $Data)
     if ($Notebook) { $syncArgs += @('--notebook', $Notebook) }
+    if ($Erase) { $syncArgs += '--erase-received' }
     if ($NoPause) { $syncArgs += '--no-prompt' }   # the window never takes the pen password
     & $Exe @syncArgs
     switch ($LASTEXITCODE) {

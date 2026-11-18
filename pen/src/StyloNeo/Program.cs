@@ -8,10 +8,12 @@ Console.OutputEncoding = Encoding.UTF8;
 const string HelpEn = """
 stylo-neo: downloads the pages of a Neo smartpen and files them for note-taking apps.
 
-  stylo-neo sync [--mac AA:BB:..] [--notebook 3-27-738] [--erase] [--no-prompt]
+  stylo-neo sync [--mac AA:BB:..] [--notebook 3-27-738] [--erase | --erase-received] [--no-prompt]
                                     downloads the pen's pages (never erases by default);
                                     --notebook: a single notebook; --erase: only the notebooks
-                                    whose end the pen confirmed
+                                    whose end the pen confirmed, once saved to disk;
+                                    --erase-received: also those whose strokes all arrived
+                                    without the end marker (never an incomplete notebook)
   stylo-neo pending [--json]        new or modified pages, not yet converted
   stylo-neo mark-done <key>         the note of this page is up to date (key e.g. 3-27-551/p009)
   stylo-neo listen [--seconds 45]   diagnostic: prints live the notebook and page being written
@@ -31,10 +33,12 @@ Exit codes: 0 ok · 1 unknown command or page · 2 error · 3 sync: at least one
 const string HelpFr = """
 stylo-neo : télécharge les pages d'un stylo Neo et les range pour les applications de prise de notes.
 
-  stylo-neo sync [--mac AA:BB:..] [--notebook 3-27-738] [--erase] [--no-prompt]
+  stylo-neo sync [--mac AA:BB:..] [--notebook 3-27-738] [--erase | --erase-received] [--no-prompt]
                                     télécharge les pages du stylo (n'efface jamais par défaut) ;
                                     --notebook : un seul carnet ; --erase : efface seulement
-                                    les carnets dont le stylo a confirmé la fin
+                                    les carnets dont le stylo a confirmé la fin, une fois
+                                    enregistrés sur le disque ; --erase-received : aussi ceux
+                                    reçus en entier sans marque de fin (jamais un carnet incomplet)
   stylo-neo pending [--json]        pages nouvelles ou modifiées, pas encore converties
   stylo-neo mark-done <clé>         la note de cette page est à jour (clé, ex. 3-27-551/p009)
   stylo-neo listen [--seconds 45]   diagnostic : affiche en direct le carnet et la page en cours d'écriture
@@ -99,12 +103,21 @@ try
                 throw new ArgumentException(L.T(
                     $"--notebook expects a section-owner-notebook id, e.g. 3-27-738 (got: {notebook}).",
                     $"--notebook attend un identifiant section-propriétaire-carnet, ex. 3-27-738 (reçu : {notebook})."));
-            var erase = Flag("--erase");
+            var eraseReceived = Flag("--erase-received");
+            var erase = Flag("--erase") || eraseReceived;
             var noPrompt = Flag("--no-prompt");
-            var sync = new PenSync(new SyncOptions(mac, erase, TimeSpan.FromSeconds(45), Notebook: notebook, NoPrompt: noPrompt));
+            MergeResult? savedBeforeErase = null;
+            var sync = new PenSync(new SyncOptions(mac, erase, TimeSpan.FromSeconds(45), Notebook: notebook, NoPrompt: noPrompt,
+                EraseReceived: eraseReceived,
+                // Erasing waits for this: the strokes are on disk before anything leaves the pen.
+                SaveBeforeErase: strokes => { savedBeforeErase = store.Merge(strokes); return true; }));
             var res = await sync.Run();
-            // Received strokes are always kept, even when a notebook is incomplete.
-            var r = store.Merge(res.Strokes);
+            // Received strokes are always kept, even when a notebook is incomplete (merging twice adds nothing).
+            var again = store.Merge(res.Strokes);
+            var r = savedBeforeErase is { } s
+                ? new MergeResult(s.NewPages + again.NewPages, s.ModifiedPages + again.ModifiedPages,
+                                  s.StrokesAdded + again.StrokesAdded, s.StrokesAlreadyKnown)
+                : again;
             Console.WriteLine(L.T(
                 $"New pages: {r.NewPages} · modified: {r.ModifiedPages} · " +
                 $"strokes added: {r.StrokesAdded} · already known: {r.StrokesAlreadyKnown}",

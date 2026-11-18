@@ -57,7 +57,8 @@ notes sont écrites quand même, sans rattachement aux réunions.
 1. Stylo allumé (voyant bleu), Bluetooth du téléphone coupé (l'appli Neo garderait le stylo connecté ou le viderait).
 2. Double-clic sur le raccourci : une fenêtre s'ouvre. **Synchro + conversion** (tous les carnets ou un seul) :
    synchro du stylo, puis conversion des nouvelles pages par Claude Code ; progression en direct, **Arrêter**
-   interrompt. Le mot de passe du stylo ne se tape jamais dans la fenêtre : s'il n'est pas encore enregistré, une
+   interrompt. Cocher **Effacer du stylo après la synchro** vide le stylo des carnets reçus en entier (seulement une
+   fois enregistrés sur le PC) : les synchros suivantes sont plus rapides. Le mot de passe du stylo ne se tape jamais dans la fenêtre : s'il n'est pas encore enregistré, une
    console s'ouvre pour le saisir (il peut alors être gardé dans le Gestionnaire d'identification Windows), puis
    la conversion reprend dans la fenêtre.
 3. Relire dans Obsidian. Les doutes sont dans un encadré **« À trancher »** en tête de chaque note : corriger le
@@ -72,13 +73,14 @@ Signes reconnus sur le papier : `M:` ou `R: titre` en haut de page = réunion ; 
 = tag ; ☐ ou `→ Nom` = tâche.
 
 ## L'outil du stylo seul
-Commandes : `sync [--mac] [--notebook 3-27-738] [--erase] [--no-prompt]`, `pending [--json]`, `mark-done <clé>`,
+Commandes : `sync [--mac] [--notebook 3-27-738] [--erase | --erase-received] [--no-prompt]`, `pending [--json]`, `mark-done <clé>`,
 `listen [--seconds 45]`, `forget-password`, `render`, `log`, `migrate` (détail dans le [README anglais](README.md)).
 Options communes : `--data-dir <chemin>` (sinon `STYLO_NEO_DATA`, sinon `Documents\StyloNeo`), `--lang en|fr` (sinon `STYLO_NEO_LANG`, sinon `en`).
 
 ## Garde-fous
-- **Effacement** : le SDK efface par défaut après téléchargement ; l'outil ne le fait jamais sans `--erase`, et
-  alors seulement pour les carnets dont le stylo a confirmé la fin du transfert.
+- **Effacement** : le SDK efface par défaut après téléchargement ; l'outil ne le fait jamais sans qu'on le demande
+  (`--erase`, `--erase-received` ou la case de la fenêtre), et alors seulement une fois les traits enregistrés sur
+  le disque, jamais pour un carnet incomplet.
 - **Mot de passe** : trop d'essais ratés réinitialisent le stylo ; l'outil s'arrête quand il reste 3 essais. Le mot
   de passe n'est jamais écrit sur disque ni dans un journal.
 - **Votre texte** : la conversion garde une copie de ce qu'elle a écrit (hors du coffre) et travaille sur la
