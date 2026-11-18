@@ -182,6 +182,66 @@ $form.Font = $font; $form.BackColor = $C.Bg; $form.ForeColor = $C.Text
 $ico = Join-Path $PSScriptRoot 'pen.ico'
 if (Test-Path $ico) { $form.Icon = New-Object System.Drawing.Icon($ico) }
 
+# Taskbar identity: the window gets its own taskbar button (pen icon, app name) instead of being grouped under
+# PowerShell — a Store PowerShell even lends its own logo to every window it hosts. Pinning the button relaunches the
+# app, not PowerShell. The small helper is compiled once and cached; any failure leaves the default behaviour.
+$taskbarSource = @'
+using System;
+using System.Runtime.InteropServices;
+namespace StyloNeoUi {
+    public static class Taskbar {
+        [StructLayout(LayoutKind.Sequential, Pack = 4)]
+        struct PropertyKey { public Guid fmtid; public uint pid; }
+        [StructLayout(LayoutKind.Explicit, Size = 24)]
+        struct PropVariant { [FieldOffset(0)] public ushort vt; [FieldOffset(8)] public IntPtr ptr; }
+        [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        interface IPropertyStore {
+            [PreserveSig] int GetCount(out uint count);
+            [PreserveSig] int GetAt(uint index, out PropertyKey key);
+            [PreserveSig] int GetValue(ref PropertyKey key, out PropVariant value);
+            [PreserveSig] int SetValue(ref PropertyKey key, ref PropVariant value);
+            [PreserveSig] int Commit();
+        }
+        [DllImport("shell32.dll")]
+        static extern int SHGetPropertyStoreForWindow(IntPtr hwnd, ref Guid iid, [Out, MarshalAs(UnmanagedType.Interface)] out IPropertyStore store);
+        static readonly Guid AppUserModel = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");
+        static void Set(IPropertyStore store, uint pid, string value) {
+            var key = new PropertyKey { fmtid = AppUserModel, pid = pid };
+            var v = new PropVariant { vt = 31, ptr = Marshal.StringToCoTaskMemUni(value) };   // VT_LPWSTR, copied by the store
+            try { store.SetValue(ref key, ref v); } finally { Marshal.FreeCoTaskMem(v.ptr); }
+        }
+        public static bool SetIdentity(IntPtr hwnd, string id, string relaunchCommand, string iconResource, string displayName) {
+            var iid = new Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99");
+            IPropertyStore store;
+            if (SHGetPropertyStoreForWindow(hwnd, ref iid, out store) != 0 || store == null) return false;
+            try {
+                Set(store, 2, relaunchCommand);   // RelaunchCommand
+                Set(store, 3, iconResource);      // RelaunchIconResource
+                Set(store, 4, displayName);       // RelaunchDisplayNameResource
+                Set(store, 5, id);                // ID, last: the relaunch properties must already be there
+                return store.Commit() == 0;
+            } finally { Marshal.ReleaseComObject(store); }
+        }
+    }
+}
+'@
+try {
+    if (-not ('StyloNeoUi.Taskbar' -as [type])) {
+        $hash = [BitConverter]::ToString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($taskbarSource))).Replace('-', '').Substring(0, 12)
+        $dll = Join-Path $env:LOCALAPPDATA "stylo-neo-notes\ui\taskbar-$hash.dll"
+        if (-not (Test-Path $dll)) {
+            New-Item -ItemType Directory -Force (Split-Path $dll) | Out-Null
+            Add-Type -TypeDefinition $taskbarSource -OutputAssembly $dll -OutputType Library
+        }
+        if (-not ('StyloNeoUi.Taskbar' -as [type])) { Add-Type -Path $dll }
+    }
+    $relaunch = "`"$(Join-Path $env:windir 'System32\conhost.exe')`" --headless `"$Pwsh`" -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+    if ($env:STYLO_NEO_CONFIG) { $relaunch += " -Config `"$env:STYLO_NEO_CONFIG`"" }
+    $form.Add_HandleCreated({
+        try { $script:taskbarSet = [StyloNeoUi.Taskbar]::SetIdentity($form.Handle, 'StyloNeoNotes.PenNotes', $relaunch, "$ico,0", $form.Text) } catch { }
+    })
+} catch { }
+
 # Header: icon, title, status chips, refresh.
 $header = New-Object System.Windows.Forms.TableLayoutPanel
 $header.Dock = 'Top'; $header.AutoSize = $true; $header.BackColor = $C.Card; $header.Padding = Pad 20 12 16 12
@@ -453,6 +513,8 @@ function Start-Run([string[]]$runArgs, $title) {
                 param($c)
                 Start-Run @('-Choice', '1', '-NoSync') (T 'Conversion' 'Conversion')
             }
+            # The only console the app ever shows, on purpose: the pen password is typed there, never in the window.
+            $syncArgs = "`$Host.UI.RawUI.WindowTitle = '$(T 'Pen password' 'Mot de passe du stylo')'; " + $syncArgs
             $script:console = Start-Process $Pwsh -ArgumentList @('-NoProfile', '-Command', $syncArgs) -PassThru
             return
         }
@@ -481,9 +543,8 @@ $btnRefresh.Add_Click({ Update-Status })
 $btnLogin.Add_Click({
     $btnLogin.Visible = $false
     $lblAgenda.Text = T 'Calendar: sign in in the window that opens…' 'Agenda : connectez-vous dans la fenêtre qui s''ouvre…'
-    $script:afterConsole = { param($c) Update-Status }
-    $script:console = Start-Process $Pwsh -ArgumentList @('-NoProfile', '-Command', $cfg.agenda.login) `
-                        -WorkingDirectory $ConfigDir -WindowStyle Minimized -PassThru
+    # The sign-in command opens its own browser window: it runs without any console window.
+    [void]$script:bg.Add((Start-Proc $Pwsh @('-NoProfile', '-Command', $cfg.agenda.login) { param($code, $text) Update-Status } -workDir $ConfigDir))
 })
 
 # --- paste tab: meetings of the chosen date, then "File it" ------------------------------------------------
@@ -591,6 +652,7 @@ $form.Add_Shown({
                 $state = "$($lblAgenda.Text) | $($lblPending.Text) | $($lblFixed.Text) | K=$K | selected: [$($cmbNotebook.Text)] [$($cmbMeeting.Text)] | notebooks: " +
                          (($cmbNotebook.Items | ForEach-Object { $_ }) -join ', ') + " | meetings: $($cmbMeeting.Items.Count - 1)" +
                          "`r`n$($script:pasteState) | $($lblPaste.Text)"
+                $state += " | taskbar identity: $($script:taskbarSet)"
                 ($state + "`r`n" + $out.Text) | Set-Content -Encoding utf8 $SelfTestOut
                 $form.Close()
             }
