@@ -21,11 +21,39 @@ Vos notes manuscrites du **Neo smartpen M1**, transformées en **notes Obsidian*
 
 ## Prérequis
 - Windows 10/11 avec Bluetooth LE, un **Neo smartpen M1** (les autres stylos Neo du même SDK devraient marcher,
-  non essayés) et du **papier Ncode** (cahiers NeoLAB, Moleskine Smart…) : le papier ordinaire n'est pas capté.
+  non essayés) et du **papier Ncode** (cahiers NeoLAB, Moleskine Smart…, ou imprimé soi-même, voir
+  [Papier et impression](#papier-et-impression)) : le papier ordinaire n'est pas capté.
 - Pour construire l'outil du stylo : le SDK .NET 8 (installable dans le profil, sans droits admin, voir plus bas)
   et Git.
 - Pour la conversion : Python 3.11+ avec Pillow (`pip install pillow`), PowerShell 7 (`pwsh`) pour le raccourci,
   Claude Code et Obsidian.
+
+## Papier et impression
+Le stylo ne lit que le papier qui porte la trame de points **Ncode**. Deux possibilités :
+
+- **Des carnets du commerce** marqués Ncode (NeoLAB, Moleskine Smart, Lamy Ncode) : la trame est imprimée par le
+  fabricant, c'est la reconnaissance la plus fiable.
+- **L'imprimer soi-même** à partir des PDF gratuits de NeoLAB : **[Ncode PDF printables](https://neolab.net/en/customer/ncode-pdf)** — papiers de base
+  (Plain, Lined, Grid, Dot, Landscape), modèles (Cornell, Check List, Meeting Minutes, Log Sheet, A5…), storyboards,
+  50 pages par PDF.
+
+Conseils d'impression de NeoLAB (sur cette page) : imprimer avec **Adobe PDF Reader** sur une **imprimante laser
+couleur** (toners CMJN) avec un **pilote PCL ou PostScript** ; sur une laser en niveaux de gris, prendre le modèle
+**Plain** ; **imprimer d'abord quelques pages d'essai** et vérifier que le stylo les lit avant de tout imprimer —
+certaines imprimantes ne savent pas imprimer le Ncode.
+
+Ce que nous avons constaté sur ces fichiers (vérifié en novembre 2026, pas indiqué par NeoLAB) :
+- **Plain est au format US Letter, pas A4** : il est rangé sous « Basic Paper (A4) », mais ses pages font
+  21,6 × 27,9 cm et la trame (une image à 600 dpi) est même un peu plus large que la page. Sur du papier A4,
+  imprimer en **taille réelle (100 %)** : on perd environ 6 mm à droite. Éviter « ajuster à la page », qui réduit la
+  trame d'environ 3 %.
+- **Jamais en mode économie ou brouillon**, et garder la pleine résolution de l'imprimante (600 dpi ou plus) : les
+  points doivent rester nets.
+- **Imprimer deux fois le même PDF donne les mêmes pages** : la trame est identique (fichiers identiques à l'octet
+  près), donc la page A3 du second tirage a la même adresse que la page A3 du premier, et le stylo mélange ce qui
+  est écrit sur les deux feuilles. Imprimer chaque PDF une seule fois, ou noter les pages déjà utilisées.
+- Même une impression correcte n'est pas parfaite : sur un carnet imprimé, environ 5 % des traits contenaient un
+  point mal lu (saut de plus de 12 mm). La conversion marque alors les mots douteux `[?]` au lieu de deviner.
 
 ## Installer
 ```powershell

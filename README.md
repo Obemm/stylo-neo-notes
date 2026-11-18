@@ -20,10 +20,35 @@ Your **Neo smartpen M1** handwriting, turned into **Obsidian notes** — without
 
 ## Requirements
 - Windows 10/11 with Bluetooth LE, a **Neo smartpen M1** (other Neo pens using the same SDK may work, untested)
-  and **Ncode paper** (NeoLAB notebooks, Moleskine Smart…): ordinary paper is not captured.
+  and **Ncode paper** (NeoLAB notebooks, Moleskine Smart…, or printed yourself, see
+  [Paper and printing](#paper-and-printing)): ordinary paper is not captured.
 - To build the pen tool: the .NET 8 SDK (a per-user install without admin rights works, see below) and Git.
 - For the conversion: Python 3.11+ with Pillow (`pip install pillow`), PowerShell 7 (`pwsh`) for the shortcut,
   Claude Code, and Obsidian.
+
+## Paper and printing
+The pen only reads paper carrying the **Ncode** dot pattern. Two options:
+
+- **Ready-made notebooks** with the Ncode mark (NeoLAB, Moleskine Smart, Lamy Ncode): the pattern is printed by the
+  maker, recognition is the most reliable.
+- **Print your own** from NeoLAB's free PDFs: **[Ncode PDF printables](https://neolab.net/en/customer/ncode-pdf)** — basic paper (Plain, Lined, Grid,
+  Dot, Landscape), templates (Cornell, Check List, Meeting Minutes, Log Sheet, A5…), storyboards, 50 pages per PDF.
+
+NeoLAB's printing advice (from that page): print with **Adobe PDF Reader** on a **colour laser printer** (CMYK
+toners) with a **PCL or PostScript driver**; on a grayscale laser, use the **Plain** layout; **test-print a few pages**
+and check that the pen reads them before printing the whole file — some printers cannot print Ncode.
+
+What we observed with these files (checked in November 2026, not stated by NeoLAB):
+- **Plain is US Letter, not A4**: it is listed under "Basic Paper (A4)", but its pages are 21.6 × 27.9 cm and the
+  dot layer (an image at 600 dpi) is even a little wider than the page. On A4 paper, print at **actual size (100 %)**:
+  you lose about 6 mm on the right. Avoid "fit to page", which shrinks the dot pattern by about 3 %.
+- **Never print in "economy" or draft mode**, and keep the printer's full resolution (600 dpi or more): the dots
+  must stay sharp.
+- **Printing the same PDF twice gives the same pages**: the pattern is identical (byte-identical files), so page A3
+  of the second print has the same address as page A3 of the first, and the pen merges what you write on both
+  sheets. Print each PDF once, or keep track of the pages already used.
+- Even a correct print is not perfect: on one printed notebook, about 5 % of the strokes contained a misread point
+  (a jump of more than 12 mm). The converter is told to mark doubtful words `[?]` rather than guess.
 
 ## Install
 ```powershell
@@ -71,7 +96,7 @@ a slide mock-up; `!` in the margin = important; `?` = open question; boxed text 
 ## The pen tool alone
 | Command | What it does |
 |---|---|
-| `stylo-neo sync [--mac AA:BB:…] [--notebook 3-27-738] [--erase \| --erase-received] [--no-prompt]` | downloads all notebooks (or one) and prints a per-notebook report; exit code 3 if a notebook did not arrive in full. Erasing always comes last, once the strokes are saved: `--erase` only notebooks whose end the pen confirmed, `--erase-received` also those whose strokes all arrived without the end marker (some pens never send it for large notebooks); an incomplete notebook is never erased. `--no-prompt`: exit code 4 instead of asking for a password that is not saved |
+| `stylo-neo sync [--mac AA:BB:…] [--notebook 3-27-738] [--erase \| --erase-received] [--no-prompt]` | downloads all notebooks (or one) and prints a per-notebook report; exit code 3 if a notebook did not arrive in full. Erasing always comes last, once the strokes are saved: `--erase` only notebooks whose end the pen confirmed, `--erase-received` also those whose strokes all arrived without the end marker (it was once seen missing, on a large notebook); an incomplete notebook is never erased. `--no-prompt`: exit code 4 instead of asking for a password that is not saved |
 | `stylo-neo pending [--json]` | pages new or modified, not converted yet |
 | `stylo-neo mark-done <key>` | the note of this page is up to date (e.g. `3-27-738/p012`) |
 | `stylo-neo listen [--seconds 45]` | connection diagnostic |
