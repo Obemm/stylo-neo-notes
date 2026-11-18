@@ -75,7 +75,7 @@ a slide mock-up; `!` in the margin = important; `?` = open question; boxed text 
 | `stylo-neo log` | every known page |
 | `stylo-neo migrate` | rewrites data saved by older versions in the current format |
 
-Common option: `--data-dir <path>` (else `STYLO_NEO_DATA`, else `Documents\StyloNeo`).
+Common options: `--data-dir <path>` (else `STYLO_NEO_DATA`, else `Documents\StyloNeo`), `--lang en|fr` (else `STYLO_NEO_LANG`, else `en`).
 Data layout: `journal.json` and `pages/<section>-<owner>-<notebook>/pNNN.json|svg|png`.
 
 ## Safety

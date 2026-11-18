@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 
 namespace StyloNeo.Core;
 
@@ -46,6 +46,8 @@ public sealed class JournalEntry
 
     [JsonIgnore] public bool IsPending => Hash != DoneHash;
     [JsonIgnore] public string State => DoneHash is null ? "new" : IsPending ? "modified" : "done";
+    /// <summary>State for display, in the language of the messages.</summary>
+    [JsonIgnore] public string StateLabel => DoneHash is null ? L.T("new", "nouvelle") : IsPending ? L.T("modified", "modifiée") : L.T("done", "traitée");
 }
 
 public sealed class Journal

@@ -56,11 +56,12 @@ public sealed class PenSync
         _ctrl.Connected += (_, a) =>
         {
             if (a.MaxForce > 0) _maxForce = a.MaxForce;
-            Console.WriteLine($"Connected: {a.DeviceName} {a.SubName}, firmware {a.FirmwareVersion}, protocol {a.ProtocolVersion}");
+            Console.WriteLine(L.T($"Connected: {a.DeviceName} {a.SubName}, firmware {a.FirmwareVersion}, protocol {a.ProtocolVersion}",
+                                  $"Connecté : {a.DeviceName} {a.SubName}, firmware {a.FirmwareVersion}, protocole {a.ProtocolVersion}"));
         };
         _ctrl.Disconnected += (_, _) =>
         {
-            var e = new InvalidOperationException("The pen disconnected.");
+            var e = new InvalidOperationException(L.T("The pen disconnected.", "Le stylo s'est déconnecté."));
             _disconnected = true;
             _authenticated.TrySetException(e); _list.TrySetException(e); _download.TrySetException(e); _erased.TrySetException(e);
         };
@@ -96,8 +97,10 @@ public sealed class PenSync
         if (remaining <= AttemptsInReserve)
         {
             _authenticated.TrySetException(new InvalidOperationException(
-                $"Stopped for safety: only {remaining} password attempt(s) left before the pen erases all its data. " +
-                "Check the password in Neo Studio 2 before trying again."));
+                L.T($"Stopped for safety: only {remaining} password attempt(s) left before the pen erases all its data. " +
+                    "Check the password in Neo Studio 2 before trying again.",
+                    $"Arrêt par sécurité : il ne reste que {remaining} essai(s) de mot de passe avant que le stylo efface toutes ses données. " +
+                    "Vérifiez le mot de passe dans Neo Studio 2 avant de réessayer.")));
             return;
         }
         if (!_vaultTried)
@@ -105,10 +108,12 @@ public sealed class PenSync
             _vaultTried = true;
             string? saved = null;
             try { saved = CredentialVault.Read(); }
-            catch (Exception e) { Console.WriteLine($"Windows Credential Manager unreadable ({e.Message}): manual entry."); }
+            catch (Exception e) { Console.WriteLine(L.T($"Windows Credential Manager unreadable ({e.Message}): manual entry.",
+                                                       $"Gestionnaire d'identification Windows illisible ({e.Message}) : saisie manuelle.")); }
             if (saved is not null)
             {
-                Console.WriteLine("Password taken from Windows Credential Manager.");
+                Console.WriteLine(L.T("Password taken from Windows Credential Manager.",
+                                      "Mot de passe du stylo lu dans le Gestionnaire d'identification Windows."));
                 _ctrl.InputPassword(saved);
                 return;
             }
@@ -117,21 +122,25 @@ public sealed class PenSync
         {
             // The saved password has just been rejected: remove it so no more attempts are wasted.
             try { CredentialVault.Forget(); } catch { /* nothing more to do */ }
-            Console.WriteLine("The saved password was rejected by the pen: removed from Windows Credential Manager.");
+            Console.WriteLine(L.T("The saved password was rejected by the pen: removed from Windows Credential Manager.",
+                                  "Le mot de passe enregistré a été refusé par le stylo : retiré du Gestionnaire d'identification Windows."));
         }
 
         if (Console.IsInputRedirected)
         {
             _authenticated.TrySetException(new InvalidOperationException(
-                "The pen asks for its password: run stylo-neo in a real terminal to type it."));
+                L.T("The pen asks for its password: run stylo-neo in a real terminal to type it.",
+                    "Le stylo demande son mot de passe : lancez stylo-neo dans un vrai terminal pour le saisir.")));
             return;
         }
-        Console.WriteLine($"The pen asks for its password ({remaining} attempts left before reset, " +
-                          $"the tool stops when {AttemptsInReserve} are left).");
-        var pwd = ReadMasked("Pen password: ");
+        Console.WriteLine(L.T($"The pen asks for its password ({remaining} attempts left before reset, " +
+                              $"the tool stops when {AttemptsInReserve} are left).",
+                              $"Le stylo demande son mot de passe ({remaining} essais restants avant réinitialisation, " +
+                              $"l'outil s'arrête quand il en reste {AttemptsInReserve})."));
+        var pwd = ReadMasked(L.T("Pen password: ", "Mot de passe du stylo : "));
         if (string.IsNullOrEmpty(pwd))
         {
-            _authenticated.TrySetException(new OperationCanceledException("Input cancelled."));
+            _authenticated.TrySetException(new OperationCanceledException(L.T("Input cancelled.", "Saisie annulée.")));
             return;
         }
         TypedPassword = pwd;
@@ -172,25 +181,32 @@ public sealed class PenSync
     public async Task<SyncResult> Run()
     {
         if (!await _bt.GetBluetoothIsEnabledAsync())
-            throw new InvalidOperationException("Bluetooth unavailable or disabled on this PC.");
+            throw new InvalidOperationException(L.T("Bluetooth unavailable or disabled on this PC.",
+                                                    "Bluetooth indisponible ou désactivé sur ce PC."));
 
-        Console.WriteLine("Searching for the pen… (turn it on: it should blink blue, and must not be connected to a phone)");
+        Console.WriteLine(L.T("Searching for the pen… (turn it on: it should blink blue, and must not be connected to a phone)",
+                              "Recherche du stylo… (allumez-le : il doit clignoter en bleu, et ne doit pas être connecté à un téléphone)"));
         _bt.StartLEAdvertisementWatcher();
         PenInformation pen;
         try { pen = await _found.Task.WaitAsync(_opt.SearchTimeout); }
-        catch (TimeoutException) { throw new InvalidOperationException("No pen found. Turn it on and switch off the phone's Bluetooth."); }
+        catch (TimeoutException) { throw new InvalidOperationException(L.T("No pen found. Turn it on and switch off the phone's Bluetooth.",
+                                                                           "Aucun stylo trouvé. Allumez-le et coupez le Bluetooth du téléphone.")); }
         finally { _bt.StopLEAdvertisementWatcher(); }
 
         Mac = pen.MacAddress;
-        Console.WriteLine($"Pen found: {pen.Name} ({pen.MacAddress}), protocol V{pen.Protocol}");
+        Console.WriteLine(L.T($"Pen found: {pen.Name} ({pen.MacAddress}), protocol V{pen.Protocol}",
+                              $"Stylo trouvé : {pen.Name} ({pen.MacAddress}), protocole V{pen.Protocol}"));
         if (pen.Protocol == Protocols.V1 && !_opt.Erase)
-            throw new InvalidOperationException(
+            throw new InvalidOperationException(L.T(
                 "This pen uses protocol V1: the SDK always erases pages after download. " +
-                "Run again with --erase if you accept that the pages leave the pen (they will be on the PC).");
+                "Run again with --erase if you accept that the pages leave the pen (they will be on the PC).",
+                "Ce stylo utilise le protocole V1 : le SDK efface toujours les pages après le téléchargement. " +
+                "Relancez avec --erase si vous acceptez que les pages quittent le stylo (elles seront sur le PC)."));
 
         var reports = new List<NotebookReport>();
         if (!await _bt.Connect(pen))
-            throw new InvalidOperationException("Connection refused. The pen may already be connected to a phone.");
+            throw new InvalidOperationException(L.T("Connection refused. The pen may already be connected to a phone.",
+                                                    "Connexion refusée. Le stylo est peut-être déjà connecté à un téléphone."));
 
         try
         {
@@ -199,17 +215,28 @@ public sealed class PenSync
             try
             {
                 var st = await _status.Task.WaitAsync(TimeSpan.FromSeconds(10));
-                Console.WriteLine($"Pen status: battery {st.Battery} %, memory used {st.UsedMem} %, " +
-                                  $"offline recording {(st.UseOfflineData ? "enabled" : "DISABLED")}");
-                Console.WriteLine($"  power on by pen tip: {(st.AutoPowerOn ? "yes" : "NO")}, " +
-                                  $"power on with cap: {(st.PenCapPower ? "yes" : "no")}, " +
-                                  $"auto shutdown after {st.AutoShutdownTime} min");
+                Console.WriteLine(L.T(
+                    $"Pen status: battery {st.Battery} %, memory used {st.UsedMem} %, " +
+                    $"offline recording {(st.UseOfflineData ? "enabled" : "DISABLED")}",
+                    $"État du stylo : batterie {st.Battery} %, mémoire utilisée {st.UsedMem} %, " +
+                    $"enregistrement hors connexion {(st.UseOfflineData ? "activé" : "DÉSACTIVÉ")}"));
+                Console.WriteLine(L.T(
+                    $"  power on by pen tip: {(st.AutoPowerOn ? "yes" : "NO")}, " +
+                    $"power on with cap: {(st.PenCapPower ? "yes" : "no")}, " +
+                    $"auto shutdown after {st.AutoShutdownTime} min",
+                    $"  allumage par la pointe : {(st.AutoPowerOn ? "oui" : "NON")}, " +
+                    $"allumage par le capuchon : {(st.PenCapPower ? "oui" : "non")}, " +
+                    $"extinction automatique après {st.AutoShutdownTime} min"));
                 if (!st.UseOfflineData)
-                    Console.WriteLine("  → The pen keeps nothing while disconnected: enable it in Neo Studio 2 (pen settings).");
+                    Console.WriteLine(L.T(
+                        "  → The pen keeps nothing while disconnected: enable it in Neo Studio 2 (pen settings).",
+                        "  → Le stylo ne garde rien hors connexion : activez l'enregistrement dans Neo Studio 2 (réglages du stylo)."));
                 if (!st.AutoPowerOn)
-                    Console.WriteLine("  → Pen off, writing does not turn it on: nothing is captured while the light is off.");
+                    Console.WriteLine(L.T(
+                        "  → Pen off, writing does not turn it on: nothing is captured while the light is off.",
+                        "  → Stylo éteint, écrire ne l'allume pas : rien n'est capturé tant que le voyant est éteint."));
             }
-            catch (TimeoutException) { Console.WriteLine("Pen status: no answer (continuing)."); }
+            catch (TimeoutException) { Console.WriteLine(L.T("Pen status: no answer (continuing).", "État du stylo : pas de réponse (on continue).")); }
             _ctrl.AddAvailableNote();   // all Ncode notebooks
             if (_opt.Listen is { } duration)
             {
@@ -219,8 +246,9 @@ public sealed class PenSync
             _ctrl.RequestOfflineDataList();
             var notebooks = await _list.Task.WaitAsync(TimeSpan.FromSeconds(30));
             Console.WriteLine(notebooks.Length == 0
-                ? "No page in the pen's memory."
-                : $"{notebooks.Length} notebook(s) in memory: {string.Join(", ", notebooks.Select(Id))}");
+                ? L.T("No page in the pen's memory.", "Aucune page dans la mémoire du stylo.")
+                : L.T($"{notebooks.Length} notebook(s) in memory: {string.Join(", ", notebooks.Select(Id))}",
+                      $"{notebooks.Length} carnet(s) en mémoire : {string.Join(", ", notebooks.Select(Id))}"));
 
             if (_opt.Notebook is not null)
             {
@@ -228,8 +256,9 @@ public sealed class PenSync
                 var chosen = notebooks.Where(c => c.Section == sec && c.Owner == own && c.Note == note).ToArray();
                 if (chosen.Length == 0)
                     throw new InvalidOperationException(
-                        $"Notebook {_opt.Notebook} is not in the pen's memory. Notebooks present: " +
-                        (notebooks.Length == 0 ? "none" : string.Join(", ", notebooks.Select(Id))) + ".");
+                        L.T($"Notebook {_opt.Notebook} is not in the pen's memory. Notebooks present: ",
+                            $"Le carnet {_opt.Notebook} n'est pas dans la mémoire du stylo. Carnets présents : ") +
+                        (notebooks.Length == 0 ? L.T("none", "aucun") : string.Join(", ", notebooks.Select(Id))) + ".");
                 notebooks = chosen;
             }
 
@@ -261,25 +290,28 @@ public sealed class PenSync
     {
         // In V1 the SDK always erases at the end of the transfer (refused above without --erase).
         bool eraseAtEnd = protocol == Protocols.V1;
-        Console.WriteLine($"Downloading notebook {Id(c)}" + (_opt.Erase ? " (erased if the end is confirmed)" : " (no erase)"));
+        Console.WriteLine(L.T($"Downloading notebook {Id(c)}", $"Téléchargement du carnet {Id(c)}") +
+                          (_opt.Erase ? L.T(" (erased if the end is confirmed)", " (effacé si la fin est confirmée)")
+                                      : L.T(" (no erase)", " (sans effacement)")));
         _download = NewTcs<bool>();
         _receivedInNotebook = 0; _totalInNotebook = 0;
         _lastActivity = DateTime.Now;
         if (!_ctrl.RequestOfflineData(c.Section, c.Owner, c.Note, deleteOnFinished: eraseAtEnd))
         {
-            Console.WriteLine("  The pen refused the download request.");
+            Console.WriteLine(L.T("  The pen refused the download request.", "  Le stylo a refusé la demande de téléchargement."));
             return new NotebookReport(Id(c), NotebookState.NothingReceived, 0, 0);
         }
         var end = await WaitForDownloadEnd();
         Console.WriteLine();
         var report = new NotebookReport(Id(c), NotebookReport.Classify(end, _receivedInNotebook, _totalInNotebook),
                                         _receivedInNotebook, _totalInNotebook);
-        Console.WriteLine($"  Notebook {report.Notebook}: {report.Label}");
+        Console.WriteLine(L.T($"  Notebook {report.Notebook}: {report.Label}", $"  Carnet {report.Notebook} : {report.Label}"));
 
         if (_opt.Erase && !eraseAtEnd)
         {
             if (!report.EraseAllowed)
-                Console.WriteLine($"  Notebook {report.Notebook} not erased: its end was not confirmed by the pen.");
+                Console.WriteLine(L.T($"  Notebook {report.Notebook} not erased: its end was not confirmed by the pen.",
+                                      $"  Carnet {report.Notebook} non effacé : sa fin n'a pas été confirmée par le stylo."));
             else if (!_disconnected)
             {
                 _erased = NewTcs<bool>();
@@ -287,9 +319,15 @@ public sealed class PenSync
                 try
                 {
                     bool ok = await _erased.Task.WaitAsync(TimeSpan.FromSeconds(15));
-                    Console.WriteLine(ok ? $"  Notebook {report.Notebook} erased from the pen." : $"  The pen refused to erase notebook {report.Notebook}.");
+                    Console.WriteLine(ok
+                        ? L.T($"  Notebook {report.Notebook} erased from the pen.", $"  Carnet {report.Notebook} effacé du stylo.")
+                        : L.T($"  The pen refused to erase notebook {report.Notebook}.", $"  Le stylo a refusé d'effacer le carnet {report.Notebook}."));
                 }
-                catch (Exception e) { Console.WriteLine($"  Erasing notebook {report.Notebook} not confirmed: {e.Message}"); }
+                catch (Exception e)
+                {
+                    Console.WriteLine(L.T($"  Erasing notebook {report.Notebook} not confirmed: {e.Message}",
+                                          $"  Effacement du carnet {report.Notebook} non confirmé : {e.Message}"));
+                }
             }
         }
         return report;
@@ -305,16 +343,19 @@ public sealed class PenSync
             if (a.Dot.DotType != DotTypes.PEN_DOWN) return;
             strokes++;
             var address = $"{a.Dot.Section}-{a.Dot.Owner}-{a.Dot.Note}, page {a.Dot.Page}";
-            if (address != last) Console.WriteLine($"  stroke captured: notebook {address}");
+            if (address != last) Console.WriteLine(L.T($"  stroke captured: notebook {address}", $"  trait capturé : carnet {address}"));
             last = address;
         }
         _ctrl.DotReceived += OnDot;
-        Console.WriteLine($"Listening for {duration.TotalSeconds:0} s: write a few words on the notebook to test…");
+        Console.WriteLine(L.T($"Listening for {duration.TotalSeconds:0} s: write a few words on the notebook to test…",
+                              $"Écoute pendant {duration.TotalSeconds:0} s : écrivez quelques mots sur le carnet pour tester…"));
         await Task.Delay(duration);
         _ctrl.DotReceived -= OnDot;
         Console.WriteLine(strokes == 0
-            ? "No stroke captured: the pen does not recognise this paper (or did not touch the page)."
-            : $"{strokes} stroke(s) captured. Live strokes are not kept in the pen's memory.");
+            ? L.T("No stroke captured: the pen does not recognise this paper (or did not touch the page).",
+                  "Aucun trait capturé : le stylo ne reconnaît pas ce papier (ou n'a pas touché la page).")
+            : L.T($"{strokes} stroke(s) captured. Live strokes are not kept in the pen's memory.",
+                  $"{strokes} trait(s) capturé(s). Les traits écrits en direct ne sont pas gardés dans la mémoire du stylo."));
     }
 
     /// <summary>

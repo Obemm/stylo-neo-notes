@@ -22,11 +22,13 @@ public sealed record NotebookReport(string Notebook, NotebookState State, int Re
 
     public string Label => State switch
     {
-        NotebookState.Complete => $"received ({Received} strokes)",
-        NotebookState.EndNotConfirmed => $"received, end not confirmed by the pen ({Received}/{Total} strokes)",
-        NotebookState.Incomplete => $"INCOMPLETE ({Received}/{Total} strokes kept)",
-        NotebookState.NothingReceived => "nothing received",
-        _ => "not attempted (connection lost)",
+        NotebookState.Complete => L.T($"received ({Received} strokes)", $"reçu ({Received} traits)"),
+        NotebookState.EndNotConfirmed => L.T($"received, end not confirmed by the pen ({Received}/{Total} strokes)",
+                                             $"reçu, fin non confirmée par le stylo ({Received}/{Total} traits)"),
+        NotebookState.Incomplete => L.T($"INCOMPLETE ({Received}/{Total} strokes kept)",
+                                        $"INCOMPLET ({Received}/{Total} traits conservés)"),
+        NotebookState.NothingReceived => L.T("nothing received", "rien reçu"),
+        _ => L.T("not attempted (connection lost)", "non tenté (connexion perdue)"),
     };
 
     /// <summary>

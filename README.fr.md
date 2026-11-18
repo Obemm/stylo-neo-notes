@@ -69,7 +69,7 @@ Signes reconnus sur le papier : `M:` ou `R: titre` en haut de page = réunion ; 
 ## L'outil du stylo seul
 Commandes : `sync [--mac] [--notebook 3-27-738] [--erase]`, `pending [--json]`, `mark-done <clé>`,
 `listen [--seconds 45]`, `forget-password`, `render`, `log`, `migrate` (détail dans le [README anglais](README.md)).
-Option commune : `--data-dir <chemin>` (sinon `STYLO_NEO_DATA`, sinon `Documents\StyloNeo`).
+Options communes : `--data-dir <chemin>` (sinon `STYLO_NEO_DATA`, sinon `Documents\StyloNeo`), `--lang en|fr` (sinon `STYLO_NEO_LANG`, sinon `en`).
 
 ## Garde-fous
 - **Effacement** : le SDK efface par défaut après téléchargement ; l'outil ne le fait jamais sans `--erase`, et
