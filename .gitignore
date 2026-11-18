@@ -1,0 +1,17 @@
+# NeoLAB SDK (GPL v3), fetched by pen/setup.ps1 at a pinned commit
+pen/vendor/
+# .NET build output and the self-contained exe produced by pen/publish.ps1
+**/bin/
+**/obj/
+*.user
+pen/dist/
+# Your own configuration (paths, calendar): never committed
+config.toml
+# Python
+__pycache__/
+.pytest_cache/
+# Generated preview of the icon
+scripts/pen.png
+# Pen pages and notes never live in this repository
+pages/
+journal.json

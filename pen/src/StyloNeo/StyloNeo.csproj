@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows10.0.26100.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>stylo-neo</AssemblyName>
+    <RootNamespace>StyloNeo</RootNamespace>
+    <!-- The NeoLAB SDK is GPL v3: so is this tool. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\StyloNeo.Core\StyloNeo.Core.csproj" />
+    <!-- Fetched by setup.ps1, not in Git -->
+    <ProjectReference Include="..\..\vendor\Windows-SDK2.0\Neosmartpen.Net\Neosmartpen.Net.csproj" />
+  </ItemGroup>
+
+</Project>

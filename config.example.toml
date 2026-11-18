@@ -1,0 +1,51 @@
+# stylo-neo-notes configuration.
+# Copy this file to `config.toml` (repository root, ignored by Git) or to
+# %APPDATA%\stylo-neo-notes\config.toml, or point the STYLO_NEO_CONFIG environment variable to it.
+# Environment variables, when set, win over this file: STYLO_NEO_VAULT, STYLO_NEO_DATA, STYLO_NEO_REFERENCES.
+
+# Language of the notes written in the vault (section titles, callouts, default folder names): "en" or "fr".
+language = "en"
+
+# Time zone used to read the pen's timestamps (IANA name). Empty = the computer's time zone.
+timezone = ""
+
+[vault]
+# Obsidian vault that receives the notes. Required.
+path = "~/Documents/PenNotes"
+# Folder names inside the vault. Empty = default for the language
+# (en: Notebooks, Journal, Meetings, Attachments/pen ; fr: Carnets, Journal, Réunions, Pièces jointes/stylo).
+notebooks_dir = ""
+journal_dir = ""
+meetings_dir = ""
+attachments_dir = ""
+# Converter's own files (notebook names, glossary, tags, conversion log) and dropped meeting transcripts.
+# Empty = default for the language (en: _pen, Inbox/Transcripts, Conversion log.md ;
+# fr: _stylo, Inbox/Transcriptions, Journal des conversions.md).
+system_dir = ""
+transcripts_dir = ""
+log_file = ""
+
+[pen]
+# Where the pen pages are stored (JSON, SVG, PNG and journal.json). Never inside the vault.
+data_dir = "~/Documents/StyloNeo"
+# The pen executable built by pen/publish.ps1. Empty = pen/dist/stylo-neo.exe in this repository.
+exe = ""
+
+[references]
+# Copies of the notes as the converter wrote them, used to find the user's corrections.
+# Keep it outside the vault and outside any synced folder. Empty = %LOCALAPPDATA%\stylo-neo-notes\references.
+dir = ""
+
+[agenda]
+# Meetings matched to the time of the pen strokes. "none" (default) or "mcp".
+source = "none"
+# With source = "mcp": a Claude Code MCP configuration file (same format as --mcp-config) and the
+# read-only tools the converter may call (one that lists the day's events, one that reads an event).
+mcp_config = ""
+tools = []
+# Optional commands run by the desktop shortcut before a sync (from this file's folder; relative paths in
+# this file, mcp_config included, are relative to this file):
+#   session_check: exit code 0 = calendar reachable, 2 = session expired, anything else = unavailable
+#   login: run when session_check returns 2 (for instance a script that opens a browser to sign in)
+session_check = ""
+login = ""
