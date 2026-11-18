@@ -18,6 +18,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+try { [void][System.Windows.Forms.Application]::SetHighDpiMode([System.Windows.Forms.HighDpiMode]::PerMonitorV2) } catch { }
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
 $env:PYTHONIOENCODING = 'utf-8'
@@ -39,124 +40,310 @@ $env:STYLO_NEO_LANG = $cfg.language
 function T($en, $fr) { if ($script:Fr) { $fr } else { $en } }
 $ConfigDir = if ($cfg.config_file) { Split-Path $cfg.config_file } else { $Repo }
 
-# --- window --------------------------------------------------------------------------------------------------
-$font = New-Object System.Drawing.Font('Segoe UI', 10)
+# --- look and feel ---------------------------------------------------------------------------------------------
+# A light, flat design: white cards on a pale background, one accent colour, rounded corners, a dark activity log.
+$C = @{
+    Bg      = [System.Drawing.Color]::FromArgb(244, 246, 250)
+    Card    = [System.Drawing.Color]::White
+    Border  = [System.Drawing.Color]::FromArgb(226, 230, 237)
+    Text    = [System.Drawing.Color]::FromArgb(17, 24, 39)
+    Muted   = [System.Drawing.Color]::FromArgb(107, 114, 128)
+    Accent  = [System.Drawing.Color]::FromArgb(37, 99, 235)
+    AccentH = [System.Drawing.Color]::FromArgb(29, 78, 216)
+    AccentL = [System.Drawing.Color]::FromArgb(219, 234, 254)
+    Hover   = [System.Drawing.Color]::FromArgb(243, 244, 246)
+    OkBg    = [System.Drawing.Color]::FromArgb(220, 252, 231); OkFg   = [System.Drawing.Color]::FromArgb(21, 128, 61)
+    WarnBg  = [System.Drawing.Color]::FromArgb(254, 243, 199); WarnFg = [System.Drawing.Color]::FromArgb(180, 83, 9)
+    InfoBg  = [System.Drawing.Color]::FromArgb(241, 245, 249); InfoFg = [System.Drawing.Color]::FromArgb(71, 85, 105)
+    DangerFg = [System.Drawing.Color]::FromArgb(185, 28, 28)
+    LogBg   = [System.Drawing.Color]::FromArgb(15, 23, 42); LogFg = [System.Drawing.Color]::FromArgb(226, 232, 240)
+}
+# Screen zoom (125 %, 150 %…): fonts follow it by themselves, pixel sizes are scaled with K.
+$g0 = [System.Drawing.Graphics]::FromHwnd([IntPtr]::Zero); $K = $g0.DpiX / 96; $g0.Dispose()
+function K($n) { [int][math]::Round($n * $script:K) }
+$uiFont = if ([System.Drawing.FontFamily]::Families.Name -contains 'Segoe UI Variable Text') { 'Segoe UI Variable Text' } else { 'Segoe UI' }
+$font      = New-Object System.Drawing.Font($uiFont, 10)
+$fontSmall = New-Object System.Drawing.Font($uiFont, 9)
+$fontBold  = New-Object System.Drawing.Font($uiFont, 10, [System.Drawing.FontStyle]::Bold)
+$fontTitle = New-Object System.Drawing.Font($uiFont, 15, [System.Drawing.FontStyle]::Bold)
+$fontH2    = New-Object System.Drawing.Font($uiFont, 11, [System.Drawing.FontStyle]::Bold)
+$monoName  = if ([System.Drawing.FontFamily]::Families.Name -contains 'Cascadia Mono') { 'Cascadia Mono' } else { 'Consolas' }
+function Pad($l, $t, $r, $b) { New-Object System.Windows.Forms.Padding((K $l), (K $t), (K $r), (K $b)) }
+
+function Get-RoundPath($rect, $radius) {
+    $p = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $d = $radius * 2
+    $p.AddArc($rect.X, $rect.Y, $d, $d, 180, 90)
+    $p.AddArc($rect.Right - $d, $rect.Y, $d, $d, 270, 90)
+    $p.AddArc($rect.Right - $d, $rect.Bottom - $d, $d, $d, 0, 90)
+    $p.AddArc($rect.X, $rect.Bottom - $d, $d, $d, 90, 90)
+    $p.CloseFigure(); $p
+}
+# Rounded corners for a control (buttons, chips): its region follows its size.
+function Set-Round($ctrl, $radius = 8) {
+    $ctrl.Tag = $radius
+    $ctrl.Add_Resize({
+        param($s, $e)
+        if ($s.Width -gt 2 -and $s.Height -gt 2) {
+            $s.Region = New-Object System.Drawing.Region((Get-RoundPath (New-Object System.Drawing.Rectangle(0, 0, $s.Width, $s.Height)) $s.Tag))
+        }
+    })
+}
+# A white card with a thin rounded border, drawn behind its children.
+function New-Card($padding = (Pad 16 14 16 14)) {
+    $p = New-Object System.Windows.Forms.Panel
+    $p.BackColor = $C.Bg; $p.Padding = $padding
+    $p.Add_Paint({
+        param($s, $e)
+        $g = $e.Graphics; $g.SmoothingMode = 'AntiAlias'
+        $r = New-Object System.Drawing.Rectangle(0, 0, ($s.Width - 1), ($s.Height - 1))
+        $path = Get-RoundPath $r 10
+        $g.FillPath((New-Object System.Drawing.SolidBrush($C.Card)), $path)
+        $g.DrawPath((New-Object System.Drawing.Pen($C.Border)), $path)
+    })
+    $p
+}
+function New-Label($text, $style = 'normal') {
+    $l = New-Object System.Windows.Forms.Label
+    $l.Text = $text; $l.AutoSize = $true; $l.BackColor = [System.Drawing.Color]::Transparent
+    $l.Margin = Pad 0 8 14 4
+    switch ($style) {
+        'muted' { $l.ForeColor = $C.Muted; $l.Font = $fontSmall }
+        'h2'    { $l.ForeColor = $C.Text; $l.Font = $fontH2; $l.Margin = Pad 0 0 0 8 }
+        default { $l.ForeColor = $C.Text }
+    }
+    $l
+}
+# Buttons: 'primary' (accent), 'secondary' (outlined), 'ghost' (text only), 'danger' (outlined, red text).
+function New-Button($text, $kind = 'secondary') {
+    $b = New-Object System.Windows.Forms.Button
+    $b.Text = $text; $b.AutoSize = $true; $b.AutoSizeMode = 'GrowAndShrink'
+    $b.FlatStyle = 'Flat'; $b.Cursor = 'Hand'; $b.Font = $font
+    $b.Padding = Pad 12 5 12 5; $b.Margin = Pad 0 4 8 4
+    $b.UseVisualStyleBackColor = $false
+    switch ($kind) {
+        'primary' {
+            $b.BackColor = $C.Accent; $b.ForeColor = [System.Drawing.Color]::White; $b.Font = $fontBold
+            $b.FlatAppearance.BorderSize = 0; $b.FlatAppearance.MouseOverBackColor = $C.AccentH
+            $b.FlatAppearance.MouseDownBackColor = $C.AccentH
+        }
+        'ghost' {
+            $b.BackColor = $C.Card; $b.ForeColor = $C.Accent
+            $b.FlatAppearance.BorderSize = 0; $b.FlatAppearance.MouseOverBackColor = $C.AccentL
+            $b.Padding = Pad 6 4 6 4
+        }
+        'danger' {
+            $b.BackColor = $C.Card; $b.ForeColor = $C.DangerFg
+            $b.FlatAppearance.BorderColor = $C.Border; $b.FlatAppearance.MouseOverBackColor = $C.Hover
+        }
+        default {
+            $b.BackColor = $C.Card; $b.ForeColor = $C.Text
+            $b.FlatAppearance.BorderColor = $C.Border; $b.FlatAppearance.MouseOverBackColor = $C.Hover
+        }
+    }
+    Set-Round $b 8
+    $b
+}
+# Status chips of the header: 'ok', 'warn' or 'info'.
+function New-Chip($text) {
+    $l = New-Object System.Windows.Forms.Label
+    $l.Text = $text; $l.AutoSize = $true; $l.Font = $fontSmall
+    $l.Padding = Pad 10 4 10 4; $l.Margin = Pad 0 2 8 2
+    Set-Round $l 11
+    Set-Chip $l 'info'
+    $l
+}
+function Set-Chip($chip, $state) {
+    switch ($state) {
+        'ok'   { $chip.BackColor = $C.OkBg;   $chip.ForeColor = $C.OkFg }
+        'warn' { $chip.BackColor = $C.WarnBg; $chip.ForeColor = $C.WarnFg }
+        default { $chip.BackColor = $C.InfoBg; $chip.ForeColor = $C.InfoFg }
+    }
+}
+function New-Flow($padding = (Pad 0 0 0 0)) {
+    $f = New-Object System.Windows.Forms.FlowLayoutPanel
+    $f.Dock = 'Top'; $f.AutoSize = $true; $f.WrapContents = $true; $f.Padding = $padding
+    $f.BackColor = $C.Card
+    $f
+}
+function New-Gap($height) {
+    $g = New-Object System.Windows.Forms.Panel; $g.Dock = 'Top'; $g.Height = $height; $g.BackColor = [System.Drawing.Color]::Transparent
+    $g
+}
+
+# --- window ----------------------------------------------------------------------------------------------------
 $form = New-Object System.Windows.Forms.Form
 $form.Text = T 'Pen notes' 'Notes du stylo'
-$form.Size = New-Object System.Drawing.Size(860, 640)
-$form.MinimumSize = New-Object System.Drawing.Size(700, 480)
+$form.AutoScaleMode = 'None'
+$form.Size = New-Object System.Drawing.Size((K 1000), (K 760))
+$form.MinimumSize = New-Object System.Drawing.Size((K 780), (K 560))
 $form.StartPosition = 'CenterScreen'
-$form.Font = $font
+$form.Font = $font; $form.BackColor = $C.Bg; $form.ForeColor = $C.Text
 $ico = Join-Path $PSScriptRoot 'pen.ico'
 if (Test-Path $ico) { $form.Icon = New-Object System.Drawing.Icon($ico) }
 
+# Header: icon, title, status chips, refresh.
+$header = New-Object System.Windows.Forms.TableLayoutPanel
+$header.Dock = 'Top'; $header.AutoSize = $true; $header.BackColor = $C.Card; $header.Padding = Pad 20 12 16 12
+$header.ColumnCount = 3; $header.RowCount = 1
+[void]$header.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('AutoSize')))
+[void]$header.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Percent', 100)))
+[void]$header.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('AutoSize')))
+$header.Add_Paint({ param($s, $e) $e.Graphics.DrawLine((New-Object System.Drawing.Pen($C.Border)), 0, $s.Height - 1, $s.Width, $s.Height - 1) })
+# Left: logo, title, subtitle.
+$brand = New-Object System.Windows.Forms.FlowLayoutPanel
+$brand.AutoSize = $true; $brand.WrapContents = $false; $brand.BackColor = $C.Card; $brand.Margin = Pad 0 0 0 0
+$logo = New-Object System.Windows.Forms.PictureBox
+$logo.Size = New-Object System.Drawing.Size((K 40), (K 40)); $logo.SizeMode = 'Zoom'; $logo.Margin = Pad 0 2 12 0
+$png = Join-Path $PSScriptRoot 'pen.png'
+if (Test-Path $png) { $logo.Image = [System.Drawing.Image]::FromFile($png) }
+elseif (Test-Path $ico) { $logo.Image = (New-Object System.Drawing.Icon($ico, 48, 48)).ToBitmap() }
+$titles = New-Object System.Windows.Forms.FlowLayoutPanel
+$titles.AutoSize = $true; $titles.FlowDirection = 'TopDown'; $titles.WrapContents = $false; $titles.BackColor = $C.Card
+$titles.Margin = Pad 0 0 0 0
+$lblAppTitle = New-Object System.Windows.Forms.Label
+$lblAppTitle.Text = T 'Pen notes' 'Notes du stylo'; $lblAppTitle.Font = $fontTitle; $lblAppTitle.AutoSize = $true
+$lblAppTitle.ForeColor = $C.Text; $lblAppTitle.Margin = Pad 0 0 0 0
+$lblAppSub = New-Object System.Windows.Forms.Label
+$lblAppSub.Text = T 'Neo smartpen → Obsidian' 'Stylo Neo → Obsidian'; $lblAppSub.Font = $fontSmall; $lblAppSub.AutoSize = $true
+$lblAppSub.ForeColor = $C.Muted; $lblAppSub.Margin = Pad 1 0 0 0
+$titles.Controls.AddRange(@($lblAppTitle, $lblAppSub))
+$brand.Controls.AddRange(@($logo, $titles))
+# Right: status chips and refresh (they wrap under each other when the window is narrow).
 $top = New-Object System.Windows.Forms.FlowLayoutPanel
-$top.Dock = 'Top'; $top.AutoSize = $true; $top.Padding = New-Object System.Windows.Forms.Padding(8, 8, 8, 0)
-$top.WrapContents = $true
-
-function New-Label($text) {
-    $l = New-Object System.Windows.Forms.Label
-    $l.Text = $text; $l.AutoSize = $true; $l.Margin = New-Object System.Windows.Forms.Padding(0, 8, 18, 4)
-    $l
-}
-function New-Button($text, $width = 0) {
-    $b = New-Object System.Windows.Forms.Button
-    $b.Text = $text; $b.AutoSize = $true; $b.Padding = New-Object System.Windows.Forms.Padding(6, 2, 6, 2)
-    $b.Margin = New-Object System.Windows.Forms.Padding(0, 2, 8, 4)
-    if ($width) { $b.Width = $width }
-    $b
-}
-
-$lblAgenda  = New-Label (T 'Calendar: …' 'Agenda : …')
-$lblPending = New-Label (T 'Pages pending: …' 'Pages en attente : …')
-$lblFixed   = New-Label (T 'Notes corrected: …' 'Notes corrigées : …')
-$btnLogin   = New-Button (T 'Sign in again' 'Se reconnecter'); $btnLogin.Visible = $false
-$btnRefresh = New-Button (T 'Refresh' 'Actualiser')
+$top.AutoSize = $true; $top.WrapContents = $false; $top.BackColor = $C.Card; $top.Anchor = 'Right'
+$top.Margin = Pad 12 6 0 0
+$lblAgenda  = New-Chip (T 'Calendar …' 'Agenda …')
+$lblPending = New-Chip (T 'Pages pending …' 'Pages en attente …')
+$lblFixed   = New-Chip (T 'Notes corrected …' 'Notes corrigées …')
+$btnLogin   = New-Button (T 'Sign in again' 'Se reconnecter') 'ghost'; $btnLogin.Visible = $false
+$btnRefresh = New-Button (T '⟳  Refresh' '⟳  Actualiser') 'ghost'
+foreach ($b in @($btnLogin, $btnRefresh)) { $b.Margin = Pad 0 0 4 0 }
 $top.Controls.AddRange(@($lblAgenda, $btnLogin, $lblPending, $lblFixed, $btnRefresh))
+$header.Controls.Add($brand, 0, 0)
+$header.Controls.Add($top, 2, 0)
 
-$actions = New-Object System.Windows.Forms.FlowLayoutPanel
-$actions.Dock = 'Top'; $actions.AutoSize = $true; $actions.Padding = New-Object System.Windows.Forms.Padding(8, 4, 8, 4)
+# Navigation: two segments over a tab control whose own headers are hidden.
+$nav = New-Object System.Windows.Forms.FlowLayoutPanel
+$nav.Dock = 'Top'; $nav.AutoSize = $true; $nav.Padding = Pad 20 14 20 0; $nav.BackColor = $C.Bg
+$segSync  = New-Button (T 'Pen sync' 'Synchro du stylo')
+$segPaste = New-Button (T 'Paste notes or a transcript' 'Coller des notes ou une transcription')
+foreach ($s in @($segSync, $segPaste)) { $s.Padding = Pad 16 7 16 7; $s.Margin = Pad 0 0 6 0 }
+$nav.Controls.AddRange(@($segSync, $segPaste))
+
+$tabs = New-Object System.Windows.Forms.TabControl
+$tabs.Dock = 'Fill'; $tabs.Appearance = 'FlatButtons'; $tabs.ItemSize = New-Object System.Drawing.Size(0, 1)
+$tabs.SizeMode = 'Fixed'; $tabs.Padding = New-Object System.Drawing.Point(0, 0)
+$tabSync  = New-Object System.Windows.Forms.TabPage; $tabSync.Text = T 'Pen sync' 'Synchro du stylo'
+$tabPaste = New-Object System.Windows.Forms.TabPage; $tabPaste.Text = T 'Paste notes or a transcript' 'Coller des notes ou une transcription'
+foreach ($t in @($tabSync, $tabPaste)) { $t.BackColor = $C.Bg; $t.Font = $font; $t.Padding = Pad 20 12 20 18; $t.UseVisualStyleBackColor = $false }
+function Set-Segments {
+    foreach ($pair in @(@($segSync, $tabSync), @($segPaste, $tabPaste))) {
+        $on = $tabs.SelectedTab -eq $pair[1]
+        $pair[0].BackColor = if ($on) { $C.Accent } else { $C.Card }
+        $pair[0].ForeColor = if ($on) { [System.Drawing.Color]::White } else { $C.Text }
+        $pair[0].Font = if ($on) { $fontBold } else { $font }
+        $pair[0].FlatAppearance.BorderSize = if ($on) { 0 } else { 1 }
+        $pair[0].FlatAppearance.MouseOverBackColor = if ($on) { $C.AccentH } else { $C.Hover }
+    }
+}
+$segSync.Add_Click({ $tabs.SelectedTab = $tabSync })
+$segPaste.Add_Click({ $tabs.SelectedTab = $tabPaste })
+$tabs.Add_SelectedIndexChanged({ Set-Segments })
+
+# --- "Pen sync" page -------------------------------------------------------------------------------------------
+$cardSync = New-Card; $cardSync.Dock = 'Top'; $cardSync.AutoSize = $true
+$lblSyncTitle = New-Label (T 'Sync the pen' 'Synchroniser le stylo') 'h2'; $lblSyncTitle.Dock = 'Top'
+$actions = New-Flow
 $cmbNotebook = New-Object System.Windows.Forms.ComboBox
-$cmbNotebook.DropDownStyle = 'DropDownList'; $cmbNotebook.Width = 170
-$cmbNotebook.Margin = New-Object System.Windows.Forms.Padding(0, 4, 6, 4)
+$cmbNotebook.DropDownStyle = 'DropDownList'; $cmbNotebook.Width = (K 190)
+$cmbNotebook.Margin = Pad 0 8 8 4
 [void]$cmbNotebook.Items.Add((T 'All notebooks' 'Tous les carnets')); $cmbNotebook.SelectedIndex = 0
-$btnSync    = New-Button (T 'Sync + conversion' 'Synchro + conversion')
-$chkErase   = New-Object System.Windows.Forms.CheckBox
+$btnSync  = New-Button (T 'Sync + conversion' 'Synchro + conversion') 'primary'
+$chkErase = New-Object System.Windows.Forms.CheckBox
 $chkErase.Text = T 'Erase from the pen after the sync' 'Effacer du stylo après la synchro'
-$chkErase.AutoSize = $true; $chkErase.Checked = $false
-$chkErase.Margin = New-Object System.Windows.Forms.Padding(0, 7, 12, 4)
+$chkErase.AutoSize = $true; $chkErase.Checked = $false; $chkErase.Margin = Pad 6 10 12 4; $chkErase.BackColor = $C.Card
 $tips = New-Object System.Windows.Forms.ToolTip
 $tips.SetToolTip($chkErase, (T 'Only notebooks fully received, and only once saved on the PC. Makes the next syncs faster.' `
                                'Seulement les carnets reçus en entier, et seulement une fois enregistrés sur le PC. Les synchros suivantes sont plus rapides.'))
+$actions.Controls.AddRange(@($cmbNotebook, $btnSync, $chkErase))
+$actions2 = New-Flow (Pad 0 4 0 0)
 $btnConvert = New-Button (T 'Convert without sync' 'Convertir sans synchro')
 $btnFix     = New-Button (T 'Integrate my corrections' 'Intégrer mes corrections')
-$btnStop    = New-Button (T 'Stop' 'Arrêter'); $btnStop.Enabled = $false
-$actions.Controls.AddRange(@($cmbNotebook, $btnSync, $chkErase, $btnConvert, $btnFix, $btnStop))
-
-$links = New-Object System.Windows.Forms.FlowLayoutPanel
-$links.Dock = 'Top'; $links.AutoSize = $true; $links.Padding = New-Object System.Windows.Forms.Padding(8, 0, 8, 6)
-$btnToday = New-Button (T "Open today's note" 'Ouvrir la note du jour')
-$btnLog   = New-Button (T 'Open the conversion log' 'Ouvrir le journal des conversions')
-$btnGoPaste = New-Button (T 'Paste notes or a transcript…' 'Coller des notes ou une transcription…')
+$btnStop    = New-Button (T 'Stop' 'Arrêter') 'danger'; $btnStop.Enabled = $false
+$actions2.Controls.AddRange(@($btnConvert, $btnFix, $btnStop))
+$links = New-Flow (Pad 0 6 0 0)
+$btnToday   = New-Button (T "Today's note ↗" 'Note du jour ↗') 'ghost'
+$btnLog     = New-Button (T 'Conversion log ↗' 'Journal des conversions ↗') 'ghost'
+$btnGoPaste = New-Button (T 'Paste notes or a transcript →' 'Coller des notes ou une transcription →') 'ghost'
 $links.Controls.AddRange(@($btnToday, $btnLog, $btnGoPaste))
+$cardSync.Controls.Add($links); $cardSync.Controls.Add($actions2); $cardSync.Controls.Add($actions); $cardSync.Controls.Add($lblSyncTitle)
 
+$lblLog = New-Label (T 'Activity' 'Activité') 'h2'; $lblLog.Dock = 'Top'; $lblLog.Padding = Pad 2 14 0 6
+$logFrame = New-Object System.Windows.Forms.Panel
+$logFrame.Dock = 'Fill'; $logFrame.BackColor = $C.LogBg; $logFrame.Padding = Pad 14 12 6 12
+Set-Round $logFrame 10
 $out = New-Object System.Windows.Forms.TextBox
 $out.Multiline = $true; $out.ReadOnly = $true; $out.ScrollBars = 'Vertical'; $out.Dock = 'Fill'
-$out.Font = New-Object System.Drawing.Font('Consolas', 10); $out.BackColor = [System.Drawing.Color]::White
-$out.WordWrap = $true
+$out.Font = New-Object System.Drawing.Font($monoName, 10); $out.BackColor = $C.LogBg; $out.ForeColor = $C.LogFg
+$out.BorderStyle = 'None'; $out.WordWrap = $true
+$logFrame.Controls.Add($out)
+$tabSync.Controls.Add($logFrame); $tabSync.Controls.Add($lblLog); $tabSync.Controls.Add($cardSync)
 
-# --- tabs: "Sync" (actions + live output) and "Paste" (notes or a meeting transcript typed elsewhere) -----------
-$tabs = New-Object System.Windows.Forms.TabControl
-$tabs.Dock = 'Fill'
-$tabs.Font = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Bold)   # tabs easy to spot
-$tabs.Padding = New-Object System.Drawing.Point(18, 6)
-$tabSync  = New-Object System.Windows.Forms.TabPage; $tabSync.Text = T 'Pen sync' 'Synchro du stylo'
-$tabPaste = New-Object System.Windows.Forms.TabPage; $tabPaste.Text = T 'Paste notes or a transcript' 'Coller des notes ou une transcription'
-$tabSync.Font = $font; $tabPaste.Font = $font   # page contents keep the normal font
-$tabSync.Controls.Add($out)      # Fill first, then the Top panels (docking order)
-$tabSync.Controls.Add($links)
-$tabSync.Controls.Add($actions)
-
-$pasteTop = New-Object System.Windows.Forms.FlowLayoutPanel
-$pasteTop.Dock = 'Top'; $pasteTop.AutoSize = $true; $pasteTop.Padding = New-Object System.Windows.Forms.Padding(8, 6, 8, 0)
+# --- "Paste" page ----------------------------------------------------------------------------------------------
+$cardPaste = New-Card; $cardPaste.Dock = 'Fill'
+$lblPasteTitle = New-Label (T 'Notes or a meeting transcript typed elsewhere' 'Notes ou transcription de réunion tapées ailleurs') 'h2'
+$lblPasteTitle.Dock = 'Top'
+$pasteTop = New-Flow
 $rbNotes = New-Object System.Windows.Forms.RadioButton
-$rbNotes.Text = T 'Notes' 'Notes'; $rbNotes.AutoSize = $true; $rbNotes.Checked = $true
-$rbNotes.Margin = New-Object System.Windows.Forms.Padding(0, 7, 8, 4)
+$rbNotes.Text = T 'Notes' 'Notes'; $rbNotes.AutoSize = $true; $rbNotes.Checked = $true; $rbNotes.Margin = Pad 0 9 10 4
 $rbTranscript = New-Object System.Windows.Forms.RadioButton
-$rbTranscript.Text = T 'Meeting transcript' 'Transcription de réunion'; $rbTranscript.AutoSize = $true
-$rbTranscript.Margin = New-Object System.Windows.Forms.Padding(0, 7, 18, 4)
+$rbTranscript.Text = T 'Meeting transcript' 'Transcription de réunion'; $rbTranscript.AutoSize = $true; $rbTranscript.Margin = Pad 0 9 22 4
 $dtDate = New-Object System.Windows.Forms.DateTimePicker
-$dtDate.Format = 'Short'; $dtDate.Width = 120; $dtDate.Margin = New-Object System.Windows.Forms.Padding(0, 4, 8, 4)
+$dtDate.Format = 'Long'; $dtDate.Width = (K 290); $dtDate.Margin = Pad 0 6 8 4
+$pasteTop.Controls.AddRange(@($rbNotes, $rbTranscript, $dtDate))
+$pasteMeeting = New-Flow (Pad 0 6 0 0)
+$lblMeeting = New-Label (T 'Meeting' 'Réunion') 'muted'; $lblMeeting.Margin = Pad 0 10 8 4
 $cmbMeeting = New-Object System.Windows.Forms.ComboBox
-$cmbMeeting.DropDownStyle = 'DropDownList'; $cmbMeeting.Width = 430
-$cmbMeeting.Margin = New-Object System.Windows.Forms.Padding(0, 4, 8, 4)
-$pasteTop.Controls.AddRange(@($rbNotes, $rbTranscript, $dtDate, $cmbMeeting))
-
-$pasteFree = New-Object System.Windows.Forms.FlowLayoutPanel
-$pasteFree.Dock = 'Top'; $pasteFree.AutoSize = $true; $pasteFree.Padding = New-Object System.Windows.Forms.Padding(8, 0, 8, 0)
-$lblTitle = New-Label (T 'Title:' 'Titre :'); $lblTitle.Margin = New-Object System.Windows.Forms.Padding(0, 8, 4, 4)
-$txtTitle = New-Object System.Windows.Forms.TextBox; $txtTitle.Width = 330
-$lblStart = New-Label (T 'Start (HH:MM):' 'Début (HH:MM) :'); $lblStart.Margin = New-Object System.Windows.Forms.Padding(8, 8, 4, 4)
-$txtStart = New-Object System.Windows.Forms.TextBox; $txtStart.Width = 60
+$cmbMeeting.DropDownStyle = 'DropDownList'; $cmbMeeting.Width = (K 600); $cmbMeeting.Margin = Pad 0 6 8 4
+$pasteMeeting.Controls.AddRange(@($lblMeeting, $cmbMeeting))
+$pasteFree = New-Flow (Pad 0 2 0 0)
+$lblTitle = New-Label (T 'Title' 'Titre') 'muted'; $lblTitle.Margin = Pad 0 10 8 4
+$txtTitle = New-Object System.Windows.Forms.TextBox; $txtTitle.Width = (K 360); $txtTitle.Margin = Pad 0 6 14 4; $txtTitle.BorderStyle = 'FixedSingle'
+$lblStart = New-Label (T 'Start (HH:MM)' 'Début (HH:MM)') 'muted'; $lblStart.Margin = Pad 0 10 8 4
+$txtStart = New-Object System.Windows.Forms.TextBox; $txtStart.Width = (K 70); $txtStart.Margin = Pad 0 6 8 4; $txtStart.BorderStyle = 'FixedSingle'
 $pasteFree.Controls.AddRange(@($lblTitle, $txtTitle, $lblStart, $txtStart))
-
-$pasteBottom = New-Object System.Windows.Forms.FlowLayoutPanel
-$pasteBottom.Dock = 'Bottom'; $pasteBottom.AutoSize = $true; $pasteBottom.Padding = New-Object System.Windows.Forms.Padding(8, 4, 8, 8)
-$btnFile = New-Button (T 'File it in Obsidian' 'Ranger dans Obsidian')
-$lblPaste = New-Label ''
+$pasteBottom = New-Flow (Pad 0 10 0 0); $pasteBottom.Dock = 'Bottom'
+$btnFile  = New-Button (T 'File it in Obsidian' 'Ranger dans Obsidian') 'primary'
+$lblPaste = New-Label '' 'muted'; $lblPaste.Margin = Pad 8 12 0 4
 $pasteBottom.Controls.AddRange(@($btnFile, $lblPaste))
-
+$txtFrame = New-Object System.Windows.Forms.Panel
+$txtFrame.Dock = 'Fill'; $txtFrame.BackColor = $C.Border; $txtFrame.Padding = Pad 1 1 1 1
 $txtPaste = New-Object System.Windows.Forms.TextBox
 $txtPaste.Multiline = $true; $txtPaste.ScrollBars = 'Vertical'; $txtPaste.Dock = 'Fill'; $txtPaste.AcceptsReturn = $true
-$txtPaste.Font = New-Object System.Drawing.Font('Segoe UI', 10); $txtPaste.MaxLength = 0
-$tabPaste.Controls.Add($txtPaste)
-$tabPaste.Controls.Add($pasteBottom)
-$tabPaste.Controls.Add($pasteFree)
-$tabPaste.Controls.Add($pasteTop)
+$txtPaste.Font = $font; $txtPaste.MaxLength = 0; $txtPaste.BorderStyle = 'None'; $txtPaste.BackColor = $C.Card
+$txtPaste.PlaceholderText = T 'Paste the text here (Ctrl+V)…' 'Collez le texte ici (Ctrl+V)…'
+$txtFrame.Controls.Add($txtPaste)
+$gapText = New-Gap 10
+$cardPaste.Controls.Add($txtFrame); $cardPaste.Controls.Add($gapText); $cardPaste.Controls.Add($pasteBottom)
+$cardPaste.Controls.Add($pasteFree); $cardPaste.Controls.Add($pasteMeeting); $cardPaste.Controls.Add($pasteTop)
+$cardPaste.Controls.Add($lblPasteTitle)
+$tabPaste.Controls.Add($cardPaste)
 
 $tabs.TabPages.AddRange(@($tabSync, $tabPaste))
 $form.Controls.Add($tabs)
-$form.Controls.Add($top)
+$form.Controls.Add($nav)
+$form.Controls.Add($header)
+Set-Segments
+# The sync card is as tall as its content (flows wrap when the window narrows).
+function Set-CardHeight {
+    $h = $cardSync.Padding.Vertical
+    foreach ($c in $cardSync.Controls) { if ($c.Visible) { $h += $c.Height + $c.Margin.Vertical } }
+    if ($cardSync.Height -ne $h) { $cardSync.Height = $h }
+}
+$cardSync.AutoSize = $false
+$cardSync.Add_Layout({ Set-CardHeight })
+$form.Add_Resize({ Set-CardHeight; $cardSync.Invalidate(); $cardPaste.Invalidate() })
 
 function Write-Out($line) {
     $clean = $line -replace "`e\[[0-9;]*[A-Za-z]", ''
@@ -223,6 +410,8 @@ function Update-Status {
             $s = $text | ConvertFrom-Json
             $lblPending.Text = if ($null -eq $s.pending) { T 'Pages pending: ?' 'Pages en attente : ?' } else { (T 'Pages pending: ' 'Pages en attente : ') + $s.pending }
             $lblFixed.Text = (T 'Notes corrected: ' 'Notes corrigées : ') + $s.corrected
+            Set-Chip $lblPending $(if ($s.pending -gt 0) { 'warn' } else { 'info' })
+            Set-Chip $lblFixed $(if ($s.corrected -gt 0) { 'warn' } else { 'info' })
             $keep = $cmbNotebook.SelectedItem
             while ($cmbNotebook.Items.Count -gt 1) { $cmbNotebook.Items.RemoveAt(1) }
             foreach ($n in $s.notebooks) { [void]$cmbNotebook.Items.Add($n) }
@@ -240,7 +429,7 @@ function Update-Status {
             2 { T 'Calendar: session expired' 'Agenda : session expirée' }
             default { T 'Calendar: unavailable' 'Agenda : indisponible' }
         }
-        $lblAgenda.ForeColor = if ($code -eq 0) { [System.Drawing.Color]::DarkGreen } else { [System.Drawing.Color]::DarkOrange }
+        Set-Chip $lblAgenda $(if ($code -eq 0) { 'ok' } else { 'warn' })
     } -workDir $ConfigDir))
 }
 
@@ -399,7 +588,7 @@ $form.Add_Shown({
                     $form.DrawToBitmap($bmp, (New-Object System.Drawing.Rectangle(0, 0, $form.Width, $form.Height)))
                     $bmp.Save(($SelfTestOut -replace '\.txt$', '') + "-$($tabs.SelectedIndex).png"); $bmp.Dispose()
                 }
-                $state = "$($lblAgenda.Text) | $($lblPending.Text) | $($lblFixed.Text) | notebooks: " +
+                $state = "$($lblAgenda.Text) | $($lblPending.Text) | $($lblFixed.Text) | K=$K | selected: [$($cmbNotebook.Text)] [$($cmbMeeting.Text)] | notebooks: " +
                          (($cmbNotebook.Items | ForEach-Object { $_ }) -join ', ') + " | meetings: $($cmbMeeting.Items.Count - 1)" +
                          "`r`n$($script:pasteState) | $($lblPaste.Text)"
                 ($state + "`r`n" + $out.Text) | Set-Content -Encoding utf8 $SelfTestOut
