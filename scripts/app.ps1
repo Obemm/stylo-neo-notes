@@ -97,7 +97,8 @@ $links = New-Object System.Windows.Forms.FlowLayoutPanel
 $links.Dock = 'Top'; $links.AutoSize = $true; $links.Padding = New-Object System.Windows.Forms.Padding(8, 0, 8, 6)
 $btnToday = New-Button (T "Open today's note" 'Ouvrir la note du jour')
 $btnLog   = New-Button (T 'Open the conversion log' 'Ouvrir le journal des conversions')
-$links.Controls.AddRange(@($btnToday, $btnLog))
+$btnGoPaste = New-Button (T 'Paste notes or a transcript…' 'Coller des notes ou une transcription…')
+$links.Controls.AddRange(@($btnToday, $btnLog, $btnGoPaste))
 
 $out = New-Object System.Windows.Forms.TextBox
 $out.Multiline = $true; $out.ReadOnly = $true; $out.ScrollBars = 'Vertical'; $out.Dock = 'Fill'
@@ -107,8 +108,11 @@ $out.WordWrap = $true
 # --- tabs: "Sync" (actions + live output) and "Paste" (notes or a meeting transcript typed elsewhere) -----------
 $tabs = New-Object System.Windows.Forms.TabControl
 $tabs.Dock = 'Fill'
-$tabSync  = New-Object System.Windows.Forms.TabPage; $tabSync.Text = T 'Sync' 'Synchro'
+$tabs.Font = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Bold)   # tabs easy to spot
+$tabs.Padding = New-Object System.Drawing.Point(18, 6)
+$tabSync  = New-Object System.Windows.Forms.TabPage; $tabSync.Text = T 'Pen sync' 'Synchro du stylo'
 $tabPaste = New-Object System.Windows.Forms.TabPage; $tabPaste.Text = T 'Paste notes or a transcript' 'Coller des notes ou une transcription'
+$tabSync.Font = $font; $tabPaste.Font = $font   # page contents keep the normal font
 $tabSync.Controls.Add($out)      # Fill first, then the Top panels (docking order)
 $tabSync.Controls.Add($links)
 $tabSync.Controls.Add($actions)
@@ -316,14 +320,17 @@ function Update-Meetings {
                 $label = if ($e.private) { T '(private meeting)' '(réunion privée)' } else { $e.subject }
                 [void]$cmbMeeting.Items.Add("$($e.start.Substring(11, 5))–$($e.end.Substring(11, 5))  $label")
             }
+            if ($cmbMeeting.SelectedIndex -lt 0) { $cmbMeeting.SelectedIndex = 0 }
             $lblPaste.Text = if ($script:events.Count) { T "$($script:events.Count) meeting(s) on this day." "$($script:events.Count) réunion(s) ce jour-là." } `
                              else { T 'No meeting on this day.' 'Aucune réunion ce jour-là.' }
         } catch {
+            if ($cmbMeeting.SelectedIndex -lt 0) { $cmbMeeting.SelectedIndex = 0 }
             $lblPaste.Text = T 'Calendar unavailable: type a title.' 'Agenda indisponible : saisissez un titre.'
         }
     } -workDir $ConfigDir))
 }
 $dtDate.Add_ValueChanged({ Update-Meetings })
+$btnGoPaste.Add_Click({ $tabs.SelectedTab = $tabPaste; $txtPaste.Focus() })
 $cmbMeeting.Add_SelectedIndexChanged({ $pasteFree.Visible = ($cmbMeeting.SelectedIndex -le 0) })
 
 $btnFile.Add_Click({
@@ -386,6 +393,12 @@ $form.Add_Shown({
             }
             if ($script:pasteDone -and -not $script:job -and $script:bg.Count -eq 0 -and -not $script:console) {
                 $script:selfTimer.Stop()
+                foreach ($tab in @($tabSync, $tabPaste)) {   # screenshots of both tabs next to the output file
+                    $tabs.SelectedTab = $tab; $form.Refresh()
+                    $bmp = New-Object System.Drawing.Bitmap($form.Width, $form.Height)
+                    $form.DrawToBitmap($bmp, (New-Object System.Drawing.Rectangle(0, 0, $form.Width, $form.Height)))
+                    $bmp.Save(($SelfTestOut -replace '\.txt$', '') + "-$($tabs.SelectedIndex).png"); $bmp.Dispose()
+                }
                 $state = "$($lblAgenda.Text) | $($lblPending.Text) | $($lblFixed.Text) | notebooks: " +
                          (($cmbNotebook.Items | ForEach-Object { $_ }) -join ', ') + " | meetings: $($cmbMeeting.Items.Count - 1)" +
                          "`r`n$($script:pasteState) | $($lblPaste.Text)"
