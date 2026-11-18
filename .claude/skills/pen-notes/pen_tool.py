@@ -15,6 +15,11 @@ the pen, and writes only into the vault (attachments), the reference copies and 
     python pen_tool.py config                     # resolved configuration (JSON)
     python pen_tool.py status                     # pages pending, notes corrected, notebooks (JSON, for the window)
     python pen_tool.py migrate-vault [--dry-run]  # rename legacy frontmatter keys (stylo_* -> pen_*)
+    python pen_tool.py paste-save --kind notes|transcript --text-file F --date YYYY-MM-DD [--start HH:MM]
+                       [--end HH:MM] [--title T] [--event-id ID] [--private]
+                                                  # keep pasted notes / a meeting transcript in the vault (JSON)
+    python pen_tool.py pasted                     # pasted items not processed yet (JSON)
+    python pen_tool.py mark-pasted <file.md>      # after the pasted item is turned into notes
 
 <key> = "3-27-551/p007". <note.md> = path relative to the vault, inside the notebooks, journal or
 meetings folder of the configuration. Configuration: see config.example.toml at the repository root.
@@ -41,6 +46,8 @@ FRONTMATTER = re.compile(r"\A(---[ \t]*\r?\n)(.*?\r?\n)(---[ \t]*(?:\r?\n|\Z))",
 LEGACY_KEY_LINE = re.compile(rf"^({'|'.join(LEGACY_FRONTMATTER_KEYS)})(?=[ \t]*:)", re.M)
 
 CONF: cfg.Config | None = None
+PASTE_KINDS = {"notes": {"en": "notes", "fr": "notes"}, "transcript": {"en": "transcript", "fr": "transcription"}}
+HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
 def _conf() -> cfg.Config:
@@ -269,6 +276,98 @@ def migrate_vault(dry_run: bool) -> int:
     return 0
 
 
+def _paste_dir() -> Path:
+    c = _conf()
+    folder = c.in_vault(c.transcripts_dir)
+    if folder is None:
+        raise Refused("transcripts folder outside the vault")
+    return folder
+
+
+def _yaml_str(value: str) -> str:
+    return json.dumps(value, ensure_ascii=False)   # a JSON string is a valid YAML scalar
+
+
+def paste_save(opts: dict[str, str], private: bool) -> int:
+    """Store pasted text with what the window knows about it; the converter turns it into notes later."""
+    kind, day = opts.get("--kind"), opts.get("--date", "")
+    if kind not in PASTE_KINDS:
+        raise Refused("--kind must be notes or transcript")
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+        raise Refused("--date expects YYYY-MM-DD")
+    start, end = opts.get("--start", ""), opts.get("--end", "")
+    for value in (start, end):
+        if value and not HHMM.match(value):
+            raise Refused("--start / --end expect HH:MM")
+    source = Path(opts.get("--text-file", ""))
+    if not source.is_file():
+        raise Refused(f"text file not found: {source}")
+    text = source.read_text(encoding="utf-8").replace("\r\n", "\n").strip()
+    if not text:
+        raise Refused("nothing to save: the pasted text is empty")
+    title = " ".join(re.sub(r'[/\\:*?"<>|\n\r\t]+', " ", opts.get("--title", "")).split())[:80]
+    c = _conf()
+    label = PASTE_KINDS[kind][c.language]
+    stem = f"{day} {(start or '00:00').replace(':', 'h')} {title or label} ({label})"
+    folder = _paste_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    target, n = folder / f"{stem}.md", 2
+    while target.exists():
+        target, n = folder / f"{stem} {n}.md", n + 1
+    front = ["---", f"pasted: {kind}", f"date: {day}"]
+    front += [f"start: {start}"] if start else []
+    front += [f"end: {end}"] if end else []
+    meeting = " ".join(opts.get("--title", "").split())[:200]   # the subject as given, on one line
+    front += [f"meeting: {_yaml_str(meeting)}"] if meeting else []
+    front += [f"event_id: {_yaml_str(opts['--event-id'])}"] if opts.get("--event-id") else []
+    front += ["private: true"] if private else []
+    front += ["processed: false", "---", ""]
+    target.write_text("\n".join(front) + text + "\n", encoding="utf-8")
+    vault = c.require_vault()
+    json.dump({"file": target.relative_to(vault).as_posix(), "characters": len(text)}, sys.stdout, ensure_ascii=False)
+    print()
+    return 0
+
+
+def _front(text: str) -> dict[str, str]:
+    m = FRONTMATTER.match(text)
+    if not m:
+        return {}
+    pairs = (line.split(":", 1) for line in m.group(2).splitlines() if ":" in line)
+    return {k.strip(): v.strip() for k, v in pairs}
+
+
+def pasted() -> int:
+    folder, vault = _paste_dir(), _conf().require_vault()
+    items = []
+    for f in sorted(folder.glob("*.md")) if folder.is_dir() else []:
+        meta = _front(_read(f))
+        if meta.get("pasted") in PASTE_KINDS and meta.get("processed", "false") == "false":
+            items.append({"file": f.relative_to(vault).as_posix(), **{k: meta[k] for k in
+                          ("pasted", "date", "start", "end", "meeting", "event_id", "private") if k in meta}})
+    json.dump({"pasted": items}, sys.stdout, ensure_ascii=False, indent=1)
+    print()
+    return 0
+
+
+def mark_pasted(rel: str) -> int:
+    folder, vault = _paste_dir(), _conf().require_vault()
+    relp = Path(rel.replace("\\", "/"))
+    if relp.is_absolute() or ".." in relp.parts or relp.suffix != ".md":
+        raise Refused(f"file refused: {rel!r}")
+    path = vault / relp
+    if path.parent.resolve() != folder.resolve() or not path.is_file():
+        raise Refused(f"not a pasted item of the transcripts folder: {rel!r}")
+    text = path.read_bytes().decode("utf-8")
+    if _front(text).get("pasted") not in PASTE_KINDS:
+        raise Refused(f"not a pasted item: {rel!r}")
+    from datetime import date
+    new = re.sub(r"(?m)^processed:[ \t]*false[ \t]*\r?$", f"processed: {date.today().isoformat()}", text, count=1)
+    path.write_bytes(new.encode("utf-8"))
+    print(f"processed: {rel}")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if hasattr(sys.stdout, "reconfigure"):  # redirected output on Windows = cp1252: "⇒" would crash it
         sys.stdout.reconfigure(encoding="utf-8")
@@ -278,7 +377,9 @@ def main(argv: list[str]) -> int:
     cmd, args = argv[0], argv[1:]
     rotate = "--rotate" in args
     dry_run = "--dry-run" in args
-    flags = {"png": ["--rotate"], "copy-svg": ["--rotate"], "migrate-vault": ["--dry-run"]}.get(cmd, [])
+    flags = {"png": ["--rotate"], "copy-svg": ["--rotate"], "migrate-vault": ["--dry-run"],
+             "paste-save": ["--private"]}.get(cmd, [])
+    private = "--private" in args
     args = [a for a in args if a not in flags]
     try:
         if cmd == "pending" and not args:
@@ -297,6 +398,15 @@ def main(argv: list[str]) -> int:
             return forget(args[0])
         if cmd == "changed" and not args:
             return changed()
+        if cmd == "paste-save" and args and len(args) % 2 == 0:
+            opts = dict(zip(args[::2], args[1::2]))
+            allowed = {"--kind", "--text-file", "--date", "--start", "--end", "--title", "--event-id"}
+            if set(opts) <= allowed:
+                return paste_save(opts, private)
+        if cmd == "pasted" and not args:
+            return pasted()
+        if cmd == "mark-pasted" and len(args) == 1:
+            return mark_pasted(args[0])
         if cmd == "status" and not args:
             return status()
         if cmd == "config" and not args:

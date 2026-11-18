@@ -78,8 +78,9 @@ Le fichier est cherché dans `STYLO_NEO_CONFIG`, puis `config.toml` à la racine
 
 **Agenda (facultatif)** : avec `agenda.source = "mcp"`, la conversion rattache l'heure des traits à vos réunions
 par des outils MCP en lecture seule que vous fournissez (`agenda.mcp_config`, `agenda.tools`), et le raccourci
-peut vérifier et renouveler la session de l'agenda (`agenda.session_check`, `agenda.login`). Sans agenda, les
-notes sont écrites quand même, sans rattachement aux réunions.
+peut vérifier et renouveler la session de l'agenda (`agenda.session_check`, `agenda.login`).
+`agenda.list_command` donne à la fenêtre les réunions d'une date (onglet Coller). Sans agenda, les notes sont
+écrites quand même, sans rattachement aux réunions.
 
 ## Utiliser
 1. Stylo allumé (voyant bleu), Bluetooth du téléphone coupé (l'appli Neo garderait le stylo connecté ou le viderait).
@@ -93,6 +94,12 @@ notes sont écrites quand même, sans rattachement aux réunions.
    texte, ou répondre dans la ligne du doute (« → oui », « → c'est DLQ »).
 4. **Intégrer mes corrections** : doutes levés, glossaire et tags mis à jour. **Convertir sans synchro** convertit
    ce qui est déjà téléchargé ; les deux derniers boutons ouvrent la note du jour et le journal des conversions.
+5. Onglet **Coller des notes ou une transcription** : des notes tapées ailleurs (chat, mail, autre application) ou
+   la transcription d'une réunion. Choisir la date et la réunion (liste lue par `agenda.list_command`, ou un titre et
+   une heure de début), coller, puis **Ranger dans Obsidian**. Le texte est gardé dans le dossier des transcriptions
+   du coffre, puis Claude Code le range : des notes collées complètent la note du stylo de la réunion (section
+   « Notes tapées », jamais reformulée) ou deviennent une note de réunion ; une transcription enrichit la note du
+   stylo (décisions et actions dites mais pas écrites) ou devient une note de réunion sans manuscrit.
 
 En session, ouvrir le dépôt dans Claude Code et dire « convertis mes notes du stylo » (`/pen-notes`).
 

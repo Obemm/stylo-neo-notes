@@ -9,9 +9,12 @@
 
 param(
     [string]$Config,
-    [ValidateSet('', 'status', 'convert', 'fix')]
+    [ValidateSet('', 'status', 'convert', 'fix', 'paste')]
     [string]$SelfTest,             # tests: clicks one action by itself, writes the window text to -SelfTestOut, closes
-    [string]$SelfTestOut
+    [string]$SelfTestOut,
+    [string]$SelfTestText,         # paste test: file whose text is pasted
+    [int]$SelfTestMeeting = 0,     # paste test: index in the meeting list (0 = no meeting)
+    [string]$SelfTestDate          # paste test: date of the meeting list (YYYY-MM-DD)
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
@@ -101,9 +104,54 @@ $out.Multiline = $true; $out.ReadOnly = $true; $out.ScrollBars = 'Vertical'; $ou
 $out.Font = New-Object System.Drawing.Font('Consolas', 10); $out.BackColor = [System.Drawing.Color]::White
 $out.WordWrap = $true
 
-$form.Controls.Add($out)       # Fill first, then the Top panels (docking order)
-$form.Controls.Add($links)
-$form.Controls.Add($actions)
+# --- tabs: "Sync" (actions + live output) and "Paste" (notes or a meeting transcript typed elsewhere) -----------
+$tabs = New-Object System.Windows.Forms.TabControl
+$tabs.Dock = 'Fill'
+$tabSync  = New-Object System.Windows.Forms.TabPage; $tabSync.Text = T 'Sync' 'Synchro'
+$tabPaste = New-Object System.Windows.Forms.TabPage; $tabPaste.Text = T 'Paste notes or a transcript' 'Coller des notes ou une transcription'
+$tabSync.Controls.Add($out)      # Fill first, then the Top panels (docking order)
+$tabSync.Controls.Add($links)
+$tabSync.Controls.Add($actions)
+
+$pasteTop = New-Object System.Windows.Forms.FlowLayoutPanel
+$pasteTop.Dock = 'Top'; $pasteTop.AutoSize = $true; $pasteTop.Padding = New-Object System.Windows.Forms.Padding(8, 6, 8, 0)
+$rbNotes = New-Object System.Windows.Forms.RadioButton
+$rbNotes.Text = T 'Notes' 'Notes'; $rbNotes.AutoSize = $true; $rbNotes.Checked = $true
+$rbNotes.Margin = New-Object System.Windows.Forms.Padding(0, 7, 8, 4)
+$rbTranscript = New-Object System.Windows.Forms.RadioButton
+$rbTranscript.Text = T 'Meeting transcript' 'Transcription de réunion'; $rbTranscript.AutoSize = $true
+$rbTranscript.Margin = New-Object System.Windows.Forms.Padding(0, 7, 18, 4)
+$dtDate = New-Object System.Windows.Forms.DateTimePicker
+$dtDate.Format = 'Short'; $dtDate.Width = 120; $dtDate.Margin = New-Object System.Windows.Forms.Padding(0, 4, 8, 4)
+$cmbMeeting = New-Object System.Windows.Forms.ComboBox
+$cmbMeeting.DropDownStyle = 'DropDownList'; $cmbMeeting.Width = 430
+$cmbMeeting.Margin = New-Object System.Windows.Forms.Padding(0, 4, 8, 4)
+$pasteTop.Controls.AddRange(@($rbNotes, $rbTranscript, $dtDate, $cmbMeeting))
+
+$pasteFree = New-Object System.Windows.Forms.FlowLayoutPanel
+$pasteFree.Dock = 'Top'; $pasteFree.AutoSize = $true; $pasteFree.Padding = New-Object System.Windows.Forms.Padding(8, 0, 8, 0)
+$lblTitle = New-Label (T 'Title:' 'Titre :'); $lblTitle.Margin = New-Object System.Windows.Forms.Padding(0, 8, 4, 4)
+$txtTitle = New-Object System.Windows.Forms.TextBox; $txtTitle.Width = 330
+$lblStart = New-Label (T 'Start (HH:MM):' 'Début (HH:MM) :'); $lblStart.Margin = New-Object System.Windows.Forms.Padding(8, 8, 4, 4)
+$txtStart = New-Object System.Windows.Forms.TextBox; $txtStart.Width = 60
+$pasteFree.Controls.AddRange(@($lblTitle, $txtTitle, $lblStart, $txtStart))
+
+$pasteBottom = New-Object System.Windows.Forms.FlowLayoutPanel
+$pasteBottom.Dock = 'Bottom'; $pasteBottom.AutoSize = $true; $pasteBottom.Padding = New-Object System.Windows.Forms.Padding(8, 4, 8, 8)
+$btnFile = New-Button (T 'File it in Obsidian' 'Ranger dans Obsidian')
+$lblPaste = New-Label ''
+$pasteBottom.Controls.AddRange(@($btnFile, $lblPaste))
+
+$txtPaste = New-Object System.Windows.Forms.TextBox
+$txtPaste.Multiline = $true; $txtPaste.ScrollBars = 'Vertical'; $txtPaste.Dock = 'Fill'; $txtPaste.AcceptsReturn = $true
+$txtPaste.Font = New-Object System.Drawing.Font('Segoe UI', 10); $txtPaste.MaxLength = 0
+$tabPaste.Controls.Add($txtPaste)
+$tabPaste.Controls.Add($pasteBottom)
+$tabPaste.Controls.Add($pasteFree)
+$tabPaste.Controls.Add($pasteTop)
+
+$tabs.TabPages.AddRange(@($tabSync, $tabPaste))
+$form.Controls.Add($tabs)
 $form.Controls.Add($top)
 
 function Write-Out($line) {
@@ -158,7 +206,7 @@ $timer.Add_Tick({
 })
 
 function Set-Busy($busy) {
-    foreach ($b in @($btnSync, $btnConvert, $btnFix, $btnRefresh, $cmbNotebook, $chkErase)) { $b.Enabled = -not $busy }
+    foreach ($b in @($btnSync, $btnConvert, $btnFix, $btnRefresh, $cmbNotebook, $chkErase, $btnFile)) { $b.Enabled = -not $busy }
     $btnStop.Enabled = $busy
     $form.Cursor = if ($busy) { 'AppStarting' } else { 'Default' }
 }
@@ -245,6 +293,66 @@ $btnLogin.Add_Click({
                         -WorkingDirectory $ConfigDir -WindowStyle Minimized -PassThru
 })
 
+# --- paste tab: meetings of the chosen date, then "File it" ------------------------------------------------
+$script:events = @()
+function Update-Meetings {
+    $cmbMeeting.Items.Clear(); $script:events = @()
+    [void]$cmbMeeting.Items.Add((T '(no meeting: title and start below)' '(aucune réunion : titre et début ci-dessous)'))
+    $cmbMeeting.SelectedIndex = 0
+    $command = $cfg.agenda.list_command
+    if (-not $command) { $lblPaste.Text = T 'No meeting list configured: type a title.' 'Pas de liste de réunions configurée : saisissez un titre.'; return }
+    # Callbacks run later from the timer, without this function's variables: keep the date at script level.
+    $script:meetingsDay = $dtDate.Value.ToString('yyyy-MM-dd')
+    $lblPaste.Text = T 'Reading the calendar…' 'Lecture de l''agenda…'
+    [void]$script:bg.Add((Start-Proc $Pwsh @('-NoProfile', '-Command', ($command -replace '\{date\}', $script:meetingsDay)) {
+        param($code, $text)
+        if ($dtDate.Value.ToString('yyyy-MM-dd') -ne $script:meetingsDay) { return }   # the date changed meanwhile
+        try {
+            if ($code -ne 0) { throw "code $code" }
+            $json = ($text -split "`n" | Where-Object { $_.Trim().StartsWith('{') } | Select-Object -Last 1) | ConvertFrom-Json
+            $script:events = @($json.events)
+            while ($cmbMeeting.Items.Count -gt 1) { $cmbMeeting.Items.RemoveAt(1) }   # two answers for one date: no duplicates
+            foreach ($e in $script:events) {
+                $label = if ($e.private) { T '(private meeting)' '(réunion privée)' } else { $e.subject }
+                [void]$cmbMeeting.Items.Add("$($e.start.Substring(11, 5))–$($e.end.Substring(11, 5))  $label")
+            }
+            $lblPaste.Text = if ($script:events.Count) { T "$($script:events.Count) meeting(s) on this day." "$($script:events.Count) réunion(s) ce jour-là." } `
+                             else { T 'No meeting on this day.' 'Aucune réunion ce jour-là.' }
+        } catch {
+            $lblPaste.Text = T 'Calendar unavailable: type a title.' 'Agenda indisponible : saisissez un titre.'
+        }
+    } -workDir $ConfigDir))
+}
+$dtDate.Add_ValueChanged({ Update-Meetings })
+$cmbMeeting.Add_SelectedIndexChanged({ $pasteFree.Visible = ($cmbMeeting.SelectedIndex -le 0) })
+
+$btnFile.Add_Click({
+    $text = $txtPaste.Text.Trim()
+    if (-not $text) { $lblPaste.Text = T 'Paste some text first.' 'Collez d''abord un texte.'; return }
+    $day = $dtDate.Value.ToString('yyyy-MM-dd')
+    $a = @($Tool, 'paste-save', '--kind', $(if ($rbTranscript.Checked) { 'transcript' } else { 'notes' }), '--date', $day)
+    $private = $false
+    if ($cmbMeeting.SelectedIndex -gt 0) {
+        $e = $script:events[$cmbMeeting.SelectedIndex - 1]
+        $a += @('--start', $e.start.Substring(11, 5), '--end', $e.end.Substring(11, 5), '--event-id', $e.id)
+        if ($e.private) { $private = $true; $a += @('--title', (T 'Private meeting' 'Réunion privée')) } else { $a += @('--title', $e.subject) }
+    } else {
+        if ($txtTitle.Text.Trim()) { $a += @('--title', $txtTitle.Text.Trim()) }
+        if ($txtStart.Text.Trim()) { $a += @('--start', $txtStart.Text.Trim()) }
+    }
+    if ($private) { $a += '--private' }
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) "stylo-neo-paste-$([guid]::NewGuid()).txt"
+    try {
+        [IO.File]::WriteAllText($tmp, $text, (New-Object System.Text.UTF8Encoding($false)))
+        $res = & python @($a + @('--text-file', $tmp)) 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) { $lblPaste.Text = $res.Trim(); return }
+    } finally { Remove-Item $tmp -ErrorAction SilentlyContinue }
+    $txtPaste.Clear(); $txtTitle.Clear(); $txtStart.Clear()
+    $lblPaste.Text = T 'Saved in the vault; filing by Claude in the Sync tab.' 'Enregistré dans le coffre ; rangement par Claude dans l''onglet Synchro.'
+    $tabs.SelectedTab = $tabSync
+    Start-Run @('-Choice', '3') (T 'Filing what was pasted' 'Rangement des collages')
+})
+
 function Open-InVault($relative) {
     $vaultName = Split-Path $cfg.vault -Leaf
     $rel = $relative -replace '\\', '/'
@@ -260,15 +368,27 @@ $btnToday.Add_Click({ Open-InVault (Join-Path $cfg.journal_dir (Get-Date -Format
 $btnLog.Add_Click({ Open-InVault (Join-Path $cfg.system_dir ([IO.Path]::GetFileNameWithoutExtension($cfg.log_file))) })
 
 $form.Add_Shown({
-    Update-Status; $timer.Start()
+    if ($SelfTestDate) { $dtDate.Value = [datetime]::ParseExact($SelfTestDate, 'yyyy-MM-dd', $null) }
+    Update-Status; Update-Meetings; $timer.Start()
     if ($SelfTest) {
         switch ($SelfTest) { 'convert' { $btnConvert.PerformClick() } 'fix' { $btnFix.PerformClick() } }
+        $script:pasteDone = $SelfTest -ne 'paste'
         $script:selfTimer = New-Object System.Windows.Forms.Timer; $script:selfTimer.Interval = 500
         $script:selfTimer.Add_Tick({
-            if (-not $script:job -and $script:bg.Count -eq 0 -and -not $script:console) {
+            if (-not $script:pasteDone -and $script:bg.Count -eq 0) {
+                $script:pasteDone = $true
+                $tabs.SelectedTab = $tabPaste
+                $txtPaste.Text = Get-Content -Raw -Encoding utf8 $SelfTestText
+                if ($SelfTestMeeting -lt $cmbMeeting.Items.Count) { $cmbMeeting.SelectedIndex = $SelfTestMeeting }
+                $script:pasteState = "paste: $($cmbMeeting.SelectedItem) | $($lblPaste.Text)"
+                $btnFile.PerformClick()
+                return
+            }
+            if ($script:pasteDone -and -not $script:job -and $script:bg.Count -eq 0 -and -not $script:console) {
                 $script:selfTimer.Stop()
                 $state = "$($lblAgenda.Text) | $($lblPending.Text) | $($lblFixed.Text) | notebooks: " +
-                         (($cmbNotebook.Items | ForEach-Object { $_ }) -join ', ')
+                         (($cmbNotebook.Items | ForEach-Object { $_ }) -join ', ') + " | meetings: $($cmbMeeting.Items.Count - 1)" +
+                         "`r`n$($script:pasteState) | $($lblPaste.Text)"
                 ($state + "`r`n" + $out.Text) | Set-Content -Encoding utf8 $SelfTestOut
                 $form.Close()
             }

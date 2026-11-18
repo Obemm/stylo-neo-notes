@@ -49,3 +49,7 @@ tools = []
 #   login: run when session_check returns 2 (for instance a script that opens a browser to sign in)
 session_check = ""
 login = ""
+# Optional command that lists the meetings of a date for the window's "Paste" tab ({date} = YYYY-MM-DD). It prints
+# JSON: {"events": [{"id": "...", "subject": "...", "start": "2026-01-15T09:30+01:00", "end": "...", "private": false}]}
+# (exit 0; 2 = session expired). Without it, the tab asks for a title and a start time.
+list_command = ""

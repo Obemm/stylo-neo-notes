@@ -15,8 +15,8 @@
 # password prompt of stylo-neo.
 
 param(
-    [ValidateSet('', '1', '2')]
-    [string]$Choice,               # 1 = load the pen, 2 = integrate my corrections (asked otherwise)
+    [ValidateSet('', '1', '2', '3')]
+    [string]$Choice,               # 1 = load the pen, 2 = integrate my corrections, 3 = file what was pasted in the window
     [string]$Config,               # configuration file (otherwise STYLO_NEO_CONFIG, config.toml, %APPDATA%)
     [switch]$NoSync,               # convert what is already pending, without touching the pen
     [string]$Notebook,             # sync a single notebook (e.g. 3-27-738)
@@ -140,6 +140,24 @@ Calendar: $(if ($calendarOk) { 'available' } else { 'unavailable, do not look up
 "@
     if ($Prompt) { $instruction = $Prompt }
     Invoke-Claude $instruction (T 'Corrections integrated' 'Intégration des corrections')
+    Done (T "Finished. Summary appended to the conversion log." "Terminé. Compte rendu ajouté au journal des conversions.") 'Green'
+}
+
+if ($Choice -eq '3') {
+    Step 1 (T 'Pasted notes and transcripts' 'Notes et transcriptions collées')
+    $items = @((python $Tool pasted | Out-String | ConvertFrom-Json).pasted)
+    if ($items.Count -eq 0 -and -not $Prompt) { Done (T 'Nothing pasted to file.' 'Rien de collé à ranger.') 'Green' }
+    foreach ($i in $items) { Write-Host "  $($i.file)" }
+    $calendarOk = Test-Calendar
+    Step 2 (T 'Filing by Claude (a few minutes)' 'Rangement par Claude (quelques minutes)')
+    $instruction = @"
+Filing of the notes and transcripts pasted in the window (launched by run.ps1).
+$read, then apply the "Pasted notes and transcripts" section of the pen-notes skill, with the rules of "Automatic mode".
+Before touching an existing note, integrate the user's corrections first (pen_tool.py changed). Do not convert pages. $rules
+Calendar: $(if ($calendarOk) { 'available' } else { 'unavailable, do not look up meetings' }).
+"@
+    if ($Prompt) { $instruction = $Prompt }
+    Invoke-Claude $instruction (T 'Pasted items filed' 'Rangement des collages')
     Done (T "Finished. Summary appended to the conversion log." "Terminé. Compte rendu ajouté au journal des conversions.") 'Green'
 }
 

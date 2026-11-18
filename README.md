@@ -72,8 +72,9 @@ notes language (`en` or `fr`), time zone, pen data folder, references folder, ca
 
 **Calendar (optional)**: with `agenda.source = "mcp"`, the converter matches the time of your strokes to your
 meetings through read-only MCP tools you provide (`agenda.mcp_config`, `agenda.tools`), and the shortcut can
-check and renew the calendar session (`agenda.session_check`, `agenda.login`). Without it, notes are still
-written, just not attached to meetings.
+check and renew the calendar session (`agenda.session_check`, `agenda.login`). `agenda.list_command` gives the
+window the meetings of a date (for the Paste tab). Without a calendar, notes are still written, just not attached
+to meetings.
 
 ## Use
 1. Pen on (blue light), Bluetooth of your phone off (the Neo app would keep the pen connected or empty it).
@@ -86,6 +87,12 @@ written, just not attached to meetings.
    answer in the doubt's line ("→ yes", "→ it's DLQ").
 4. **Integrate my corrections**: doubts settled, glossary and tags updated. **Convert without sync** converts what
    is already downloaded; the last two buttons open today's note and the conversion log in Obsidian.
+5. **Paste notes or a transcript** tab: notes typed elsewhere (chat, email, another app) or a meeting transcript.
+   Pick the date and the meeting (list read through `agenda.list_command`, or a title and a start time), paste, then
+   **File it in Obsidian**. The text is kept in the transcripts folder of the vault, then Claude Code files it: pasted
+   notes complete the pen note of that meeting (a "typed notes" section, never reworded) or become a meeting note;
+   a transcript enriches the pen note (decisions and actions said but not written) or becomes a meeting note
+   without handwriting.
 
 Interactively, open the repository in Claude Code and say "convert my pen notes" (`/pen-notes`).
 
