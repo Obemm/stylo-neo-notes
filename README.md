@@ -103,6 +103,10 @@ notes and their reference copies move together, source tags are added, links kee
 
 Interactively, open the repository in Claude Code and say "convert my pen notes" (`/pen-notes`).
 
+Tip: in Obsidian, set the core **Daily notes** plugin to the journal folder (*Settings → Daily notes → New file
+location*: `Journal`, date format `YYYY-MM-DD`): Obsidian's own "today's note" button then opens the daily note the
+converter fills, instead of creating an empty one at the root of the vault.
+
 Paper signs the converter understands: `M: title` at the top of a page = a meeting; `SL: title` above a grid =
 a slide mock-up; `!` in the margin = important; `?` = open question; boxed text = decision; circled word = tag;
 ☐ or `→ Name` = task.

@@ -111,6 +111,10 @@ copies de référence déplacées ensemble, tags de source ajoutés, liens intac
 
 En session, ouvrir le dépôt dans Claude Code et dire « convertis mes notes du stylo » (`/pen-notes`).
 
+Astuce : dans Obsidian, régler le module **Notes quotidiennes** sur le dossier du journal (*Paramètres → Notes
+quotidiennes → Emplacement du nouveau fichier* : `Journal`, format de date `YYYY-MM-DD`) : le bouton « note du jour »
+d'Obsidian ouvre alors la note du jour remplie par la conversion, au lieu d'en créer une vide à la racine du coffre.
+
 Signes reconnus sur le papier : `M:` ou `R: titre` en haut de page = réunion ; `SL: titre` au-dessus d'une grille
 = maquette de slide ; `!` en marge = important ; `?` = question ouverte ; texte encadré = décision ; mot entouré
 = tag ; ☐ ou `→ Nom` = tâche.
