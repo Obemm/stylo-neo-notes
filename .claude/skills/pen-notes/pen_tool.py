@@ -359,8 +359,14 @@ def migrate_folders(dry_run: bool) -> int:
             tags = note_sources(_read(path), c.language)
             all_tags += tags
             moves.append({"from": rel, "to": target, "tags_added": tags})
+    # Source tags already carried by the notes folder count too: a second run (after an interrupted one) still adds
+    # the vocabulary row.
+    for path in sorted(notes.glob("*.md")) if notes.is_dir() else []:
+        m = TAGS_LINE.search(_read(path))
+        all_tags += [t.strip() for t in (m.group(1).split(",") if m else []) if t.strip().startswith("source/")]
     tags_file = vault / c.system_dir / TAGS_FILE[c.language]
-    row_needed = tags_file.is_file() and "| `source/`" not in _read(tags_file) and bool(moves)
+    row_needed = tags_file.is_file() and "| `source/`" not in _read(tags_file) and bool(all_tags)
+    kept_dirs = []
     if not dry_run:
         for mv in moves:
             for base in (vault, c.references):
@@ -371,14 +377,6 @@ def migrate_folders(dry_run: bool) -> int:
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 dst.write_bytes(add_tags(text, mv["tags_added"]).encode("utf-8"))
                 src.unlink()
-        for legacy in c.legacy_dirs:   # remove the emptied per-source folders (only if empty)
-            for base in (vault, c.references):
-                root = base / legacy
-                for d in sorted((p for p in root.rglob("*") if p.is_dir()), key=lambda p: -len(p.parts)) if root.is_dir() else []:
-                    if not any(d.iterdir()):
-                        d.rmdir()
-                if root.is_dir() and not any(root.iterdir()):
-                    root.rmdir()
         if row_needed:
             values = ", ".join(f"`{t.split('/', 1)[1]}`" for t in dict.fromkeys(sorted(all_tags)))
             text = _read(tags_file)
@@ -389,8 +387,20 @@ def migrate_folders(dry_run: bool) -> int:
                 at = max((i for i, l in enumerate(lines) if l.startswith("|")), default=len(lines) - 1) + 1
             lines.insert(at, row)
             tags_file.write_text("\n".join(lines), encoding="utf-8")
-    json.dump({"dry_run": dry_run, "notes_dir": c.notes_dir, "moves": moves, "tags_row_added": row_needed},
-              sys.stdout, ensure_ascii=False, indent=1)
+        # Last, remove the emptied per-source folders. A folder Windows refuses to remove (open in Obsidian or held
+        # by the sync client) is only reported: it is empty and harmless, delete it later from Obsidian.
+        for legacy in c.legacy_dirs:
+            for base in (vault, c.references):
+                root = base / legacy
+                folders = sorted((p for p in root.rglob("*") if p.is_dir()), key=lambda p: -len(p.parts)) if root.is_dir() else []
+                for d in folders + ([root] if root.is_dir() else []):
+                    if d.is_dir() and not any(d.iterdir()):
+                        try:
+                            d.rmdir()
+                        except OSError:
+                            kept_dirs.append(str(d))
+    json.dump({"dry_run": dry_run, "notes_dir": c.notes_dir, "moves": moves, "tags_row_added": row_needed,
+               "empty_folders_kept": kept_dirs}, sys.stdout, ensure_ascii=False, indent=1)
     print()
     return 0
 

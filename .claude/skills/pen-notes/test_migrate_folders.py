@@ -95,3 +95,23 @@ def test_name_clash_gets_a_suffix(vault, capsys):
     (v / "Notes" / "2030-01-16 14h00 Supplier call.md").write_text("---\ntags: []\n---\nalready here\n", encoding="utf-8")
     plan = json.loads(run(capsys, "migrate-folders", "--dry-run")[1])
     assert "Notes/2030-01-16 14h00 Supplier call (2).md" in {m["to"] for m in plan["moves"]}
+
+
+def test_rerun_after_interruption_adds_the_vocabulary_row_and_reports_locked_folders(vault, capsys, monkeypatch):
+    v, _ = vault
+    (v / "Notes").mkdir()
+    (v / "Notes" / "2030-01-20 10h00 Done.md").write_text("---\ntags: [pen, source/notebook-551]\n---\nx\n", encoding="utf-8")
+    for p in list((v / "Notebooks").rglob("*.md")) + list((v / "Meetings").rglob("*.md")):
+        p.unlink()   # as if the notes had already been moved by an interrupted run
+    real_rmdir = type(v).rmdir
+
+    def locked(self):
+        if self.name == "Notebook 551" and str(v) in str(self):
+            raise PermissionError("in use")
+        real_rmdir(self)
+    monkeypatch.setattr(type(v), "rmdir", locked)
+    result = json.loads(run(capsys, "migrate-folders")[1])
+    assert result["moves"] == [] and result["tags_row_added"] is True
+    assert any(k.endswith("Notebook 551") for k in result["empty_folders_kept"])
+    assert "`notebook-551`" in (v / "_pen" / "Tags.md").read_text(encoding="utf-8")
+    assert not (v / "Meetings").exists()
