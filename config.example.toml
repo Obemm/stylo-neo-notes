@@ -12,12 +12,16 @@ timezone = ""
 [vault]
 # Obsidian vault that receives the notes. Required.
 path = "~/Documents/PenNotes"
-# Folder names inside the vault. Empty = default for the language
-# (en: Notebooks, Journal, Meetings, Attachments/pen ; fr: Carnets, Journal, Réunions, Pièces jointes/stylo).
-notebooks_dir = ""
+# Folder names inside the vault. Empty = default for the language (en: Notes, Journal, Attachments/pen ;
+# fr: Notes, Journal, Pièces jointes/stylo). Every note goes into notes_dir, whatever its source (pen notebook,
+# transcript, pasted notes), named "YYYY-MM-DD HHhMM Subject": the source is a tag (source/...), not a folder.
+notes_dir = ""
 journal_dir = ""
-meetings_dir = ""
 attachments_dir = ""
+# Per-source folders of earlier versions (read until `pen_tool.py migrate-folders` moves their notes). Empty =
+# default for the language (en: Notebooks, Meetings ; fr: Carnets, Réunions).
+notebooks_dir = ""
+meetings_dir = ""
 # Converter's own files (notebook names, glossary, tags, conversion log) and dropped meeting transcripts.
 # Empty = default for the language (en: _pen, Inbox/Transcripts, Conversion log.md ;
 # fr: _stylo, Inbox/Transcriptions, Journal des conversions.md).

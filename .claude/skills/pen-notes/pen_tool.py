@@ -20,9 +20,13 @@ the pen, and writes only into the vault (attachments), the reference copies and 
                                                   # keep pasted notes / a meeting transcript in the vault (JSON)
     python pen_tool.py pasted                     # pasted items not processed yet (JSON)
     python pen_tool.py mark-pasted <file.md>      # after the pasted item is turned into notes
+    python pen_tool.py source-tags <note.md>      # source tags a note should carry (JSON)
+    python pen_tool.py migrate-folders [--dry-run]
+                                                  # move notes out of per-source folders into the notes folder,
+                                                  # adding source tags (notes and reference copies alike)
 
-<key> = "3-27-551/p007". <note.md> = path relative to the vault, inside the notebooks, journal or
-meetings folder of the configuration. Configuration: see config.example.toml at the repository root.
+<key> = "3-27-551/p007". <note.md> = path relative to the vault, inside the notes or journal folder of the
+configuration (or a per-source folder of an older vault). Configuration: see config.example.toml.
 """
 from __future__ import annotations
 
@@ -46,6 +50,14 @@ FRONTMATTER = re.compile(r"\A(---[ \t]*\r?\n)(.*?\r?\n)(---[ \t]*(?:\r?\n|\Z))",
 LEGACY_KEY_LINE = re.compile(rf"^({'|'.join(LEGACY_FRONTMATTER_KEYS)})(?=[ \t]*:)", re.M)
 
 CONF: cfg.Config | None = None
+# The source of a note is a tag, not a folder.
+SOURCE_TAGS = {"en": {"notebook": "source/notebook-{n}", "transcript": "source/transcript", "pasted": "source/typed-notes"},
+               "fr": {"notebook": "source/cahier-{n}", "transcript": "source/transcription", "pasted": "source/notes-tapees"}}
+SOURCE_ROW = {"en": "| `source/` | where the note comes from (a note may have several) | {values} |",
+              "fr": "| `source/` | origine de la note (une note peut en avoir plusieurs) | {values} |"}
+TAGS_FILE = {"en": "Tags.md", "fr": "Tags.md"}
+PEN_PAGE = re.compile(r"\d+-\d+-(\d+)/p\d{3}")
+TAGS_LINE = re.compile(r"^tags:[ \t]*\[(.*)\][ \t]*\r?$", re.M)
 PASTE_KINDS = {"notes": {"en": "notes", "fr": "notes"}, "transcript": {"en": "transcript", "fr": "transcription"}}
 HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
@@ -276,6 +288,113 @@ def migrate_vault(dry_run: bool) -> int:
     return 0
 
 
+def note_sources(text: str, language: str) -> list[str]:
+    """Source tags a note should carry, read from its frontmatter: one per pen notebook, transcript, pasted notes."""
+    m = FRONTMATTER.match(text)
+    if not m:
+        return []
+    front, names = m.group(2), SOURCE_TAGS[language]
+    tags = []
+    for line in front.splitlines():
+        if re.match(r"(pen_pages|stylo_pages)[ \t]*:", line):
+            for n in dict.fromkeys(PEN_PAGE.findall(line)):
+                tags.append(names["notebook"].format(n=n))
+    lowered = front.lower()
+    if (re.search(r"(?m)^transcript[ \t]*:", front) or re.search(r"(?m)^source:[ \t]*\"?(transcript|transcription)", lowered)
+            or "type/sans-manuscrit" in lowered or "type/no-handwriting" in lowered):
+        tags.append(names["transcript"])
+    if re.search(r"(?m)^pasted[ \t]*:", front):
+        tags.append(names["pasted"])
+    return tags
+
+
+def add_tags(text: str, tags: list[str]) -> str:
+    """Add tags to the inline `tags: [...]` list of the frontmatter (or create it); nothing else changes."""
+    m = FRONTMATTER.match(text)
+    if not m or not tags:
+        return text
+    front = m.group(2)
+    line = TAGS_LINE.search(front)
+    if line:
+        present = [t.strip() for t in line.group(1).split(",") if t.strip()]
+        new = present + [t for t in tags if t not in present]
+        if new == present:
+            return text
+        end_cr = "\r" if line.group(0).endswith("\r") else ""   # keep Windows line endings as they were
+        front = front[:line.start()] + f"tags: [{', '.join(new)}]{end_cr}" + front[line.end():]
+    else:
+        nl = "\r\n" if "\r\n" in front else "\n"
+        front = front + f"tags: [{', '.join(tags)}]{nl}"
+    return m.group(1) + front + m.group(3) + text[m.end():]
+
+
+def source_tags(rel: str) -> int:
+    note, _ = _note(rel)
+    if not note.is_file():
+        raise Refused(f"note not found: {rel!r}")
+    json.dump({"note": rel, "tags": note_sources(_read(note), _conf().language)}, sys.stdout, ensure_ascii=False)
+    print()
+    return 0
+
+
+def _free_name(folder: Path, name: str, taken: set[str]) -> str:
+    stem, n, candidate = name[:-3], 2, name
+    while candidate.lower() in taken or (folder / candidate).exists():
+        candidate, n = f"{stem} ({n}).md", n + 1
+    taken.add(candidate.lower())
+    return candidate
+
+
+def migrate_folders(dry_run: bool) -> int:
+    """Move every note of the per-source folders of an older vault into the notes folder, adding its source tags.
+    Reference copies move and change the same way, so a correction made by the user stays visible to `changed`."""
+    c = _conf()
+    vault = c.require_vault()
+    notes = vault / c.notes_dir
+    moves, taken, all_tags = [], set(), []
+    for legacy in c.legacy_dirs:
+        for path in sorted((vault / legacy).rglob("*.md")) if (vault / legacy).is_dir() else []:
+            rel = path.relative_to(vault).as_posix()
+            target = f"{c.notes_dir}/{_free_name(notes, path.name, taken)}"
+            tags = note_sources(_read(path), c.language)
+            all_tags += tags
+            moves.append({"from": rel, "to": target, "tags_added": tags})
+    tags_file = vault / c.system_dir / TAGS_FILE[c.language]
+    row_needed = tags_file.is_file() and "| `source/`" not in _read(tags_file) and bool(moves)
+    if not dry_run:
+        for mv in moves:
+            for base in (vault, c.references):
+                src, dst = base / mv["from"], base / mv["to"]
+                if not src.is_file():
+                    continue
+                text = src.read_bytes().decode("utf-8")
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                dst.write_bytes(add_tags(text, mv["tags_added"]).encode("utf-8"))
+                src.unlink()
+        for legacy in c.legacy_dirs:   # remove the emptied per-source folders (only if empty)
+            for base in (vault, c.references):
+                root = base / legacy
+                for d in sorted((p for p in root.rglob("*") if p.is_dir()), key=lambda p: -len(p.parts)) if root.is_dir() else []:
+                    if not any(d.iterdir()):
+                        d.rmdir()
+                if root.is_dir() and not any(root.iterdir()):
+                    root.rmdir()
+        if row_needed:
+            values = ", ".join(f"`{t.split('/', 1)[1]}`" for t in dict.fromkeys(sorted(all_tags)))
+            text = _read(tags_file)
+            row = SOURCE_ROW[c.language].format(values=values)
+            lines = text.split("\n")
+            at = next((i for i, l in enumerate(lines) if l.startswith("| `statut/`") or l.startswith("| `status/`")), None)
+            if at is None:
+                at = max((i for i, l in enumerate(lines) if l.startswith("|")), default=len(lines) - 1) + 1
+            lines.insert(at, row)
+            tags_file.write_text("\n".join(lines), encoding="utf-8")
+    json.dump({"dry_run": dry_run, "notes_dir": c.notes_dir, "moves": moves, "tags_row_added": row_needed},
+              sys.stdout, ensure_ascii=False, indent=1)
+    print()
+    return 0
+
+
 def _paste_dir() -> Path:
     c = _conf()
     folder = c.in_vault(c.transcripts_dir)
@@ -378,7 +497,7 @@ def main(argv: list[str]) -> int:
     rotate = "--rotate" in args
     dry_run = "--dry-run" in args
     flags = {"png": ["--rotate"], "copy-svg": ["--rotate"], "migrate-vault": ["--dry-run"],
-             "paste-save": ["--private"]}.get(cmd, [])
+             "migrate-folders": ["--dry-run"], "paste-save": ["--private"]}.get(cmd, [])
     private = "--private" in args
     args = [a for a in args if a not in flags]
     try:
@@ -407,6 +526,10 @@ def main(argv: list[str]) -> int:
             return pasted()
         if cmd == "mark-pasted" and len(args) == 1:
             return mark_pasted(args[0])
+        if cmd == "source-tags" and len(args) == 1:
+            return source_tags(args[0])
+        if cmd == "migrate-folders" and not args:
+            return migrate_folders(dry_run)
         if cmd == "status" and not args:
             return status()
         if cmd == "config" and not args:

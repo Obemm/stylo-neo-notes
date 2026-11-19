@@ -23,7 +23,8 @@ def test_no_file_but_env_vault(tmp_path, monkeypatch):
     assert c.config_file is None
     assert c.vault == (tmp_path / "v").resolve()
     assert c.language == "en"
-    assert c.tracked_dirs == ("Notebooks", "Journal", "Meetings")
+    assert c.tracked_dirs == ("Notes", "Journal", "Notebooks", "Meetings")   # legacy folders still read
+    assert c.legacy_dirs == ("Notebooks", "Meetings")
     assert c.attachments_dir == "Attachments/pen"
     assert (c.system_dir, c.transcripts_dir, c.log_file) == ("_pen", "Inbox/Transcripts", "Conversion log.md")
     assert c.references == tmp_path / "localappdata" / "stylo-neo-notes" / "references"
@@ -35,7 +36,8 @@ def test_no_file_but_env_vault(tmp_path, monkeypatch):
 def test_french_defaults(tmp_path, monkeypatch):
     monkeypatch.setenv("STYLO_NEO_CONFIG", str(write(tmp_path / "c.toml", 'language = "fr"\n[vault]\npath = "v"\n')))
     c = cfg.load()
-    assert c.tracked_dirs == ("Carnets", "Journal", "Réunions")
+    assert c.tracked_dirs == ("Notes", "Journal", "Carnets", "Réunions")
+    assert c.legacy_dirs == ("Carnets", "Réunions")
     assert c.attachments_dir == "Pièces jointes/stylo"
     assert (c.system_dir, c.transcripts_dir, c.log_file) == (
         "_stylo", "Inbox/Transcriptions", "Journal des conversions.md")

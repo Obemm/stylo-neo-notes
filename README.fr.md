@@ -10,7 +10,10 @@ Vos notes manuscrites du **Neo smartpen M1**, transformées en **notes Obsidian*
 - `.claude/skills/pen-notes/` : un **skill Claude Code** qui lit chaque page et écrit les notes Obsidian :
   transcription fidèle (mots incertains marqués `mot[?]`), tâches, schémas redessinés en Mermaid en gardant leur
   disposition, croquis gardés en SVG, une note par réunion ou par sujet plus une note du jour, comptes rendus
-  rattachés à votre agenda (facultatif), tags. En cas de doute, il l'écrit **dans la note** ; vous corrigez dans
+  rattachés à votre agenda (facultatif), tags. Les notes sont **classées par jour, heure et sujet** dans un seul
+  dossier (`Notes/`), quelle que soit leur source ; la source (carnet du stylo, transcription, notes collées) est un
+  **tag** (`source/…`). Une transcription de réunion devient un **compte rendu** — décisions, actions, courte synthèse,
+  questions ouvertes —, jamais un collage. En cas de doute, il l'écrit **dans la note** ; vous corrigez dans
   Obsidian, et il apprend de vos corrections (glossaire, tags) sans jamais réécrire votre texte.
 - `scripts/` : une fenêtre sur le bureau (`app.ps1`) : synchro + conversion, convertir sans synchro, intégrer mes
   corrections, ouvrir la note du jour ou le journal des conversions, progression en direct ; `run.ps1` fait la même
@@ -97,9 +100,14 @@ peut vérifier et renouveler la session de l'agenda (`agenda.session_check`, `ag
 5. Onglet **Coller des notes ou une transcription** : des notes tapées ailleurs (chat, mail, autre application) ou
    la transcription d'une réunion. Choisir la date et la réunion (liste lue par `agenda.list_command`, ou un titre et
    une heure de début), coller, puis **Ranger dans Obsidian**. Le texte est gardé dans le dossier des transcriptions
-   du coffre, puis Claude Code le range : des notes collées complètent la note du stylo de la réunion (section
-   « Notes tapées », jamais reformulée) ou deviennent une note de réunion ; une transcription enrichit la note du
-   stylo (décisions et actions dites mais pas écrites) ou devient une note de réunion sans manuscrit.
+   du coffre, puis Claude Code le range : des notes collées complètent la note de la réunion (section
+   « Notes tapées », jamais reformulée) ou deviennent une note de réunion ; une transcription devient un **compte
+   rendu** (décisions, actions, courte synthèse, questions ouvertes) ajouté à la note de la réunion, ou une nouvelle note.
+   Une seule note par réunion, quelles que soient les sources.
+
+Un coffre d'une version précédente (un dossier par carnet, un dossier `Réunions`) passe au dossier unique avec
+`python .claude/skills/pen-notes/pen_tool.py migrate-folders --dry-run` (aperçu), puis sans `--dry-run` : notes et
+copies de référence déplacées ensemble, tags de source ajoutés, liens intacts (Obsidian relie par le nom).
 
 En session, ouvrir le dépôt dans Claude Code et dire « convertis mes notes du stylo » (`/pen-notes`).
 

@@ -10,8 +10,11 @@ Your **Neo smartpen M1** handwriting, turned into **Obsidian notes** — without
 - `.claude/skills/pen-notes/` — a **Claude Code skill** that reads each page and writes Obsidian notes: faithful
   transcription (uncertain words marked `word[?]`), tasks, diagrams redrawn in Mermaid keeping their layout,
   sketches kept as SVG, one note per meeting or topic plus a daily note, meeting minutes matched to your
-  calendar (optional), tags. When in doubt, it writes the doubt **in the note**; you correct in Obsidian, and it
-  learns your corrections (glossary, tags) without ever rewriting your text.
+  calendar (optional), tags. Notes are **filed by day, time and subject** in one folder (`Notes/`), whatever
+  their source; the source (pen notebook, meeting transcript, pasted notes) is a **tag** (`source/…`). A meeting
+  transcript becomes **minutes** — decisions, actions, a short summary, open questions — never a pasted copy. When in
+  doubt, it writes the doubt **in the note**; you correct in Obsidian, and it learns your corrections (glossary,
+  tags) without ever rewriting your text.
 - `scripts/` — a desktop window (`app.ps1`): sync + conversion, convert without sync, integrate my corrections,
   open today's note or the conversion log, with live progress; `run.ps1` is the same in a console, for automation.
 
@@ -90,9 +93,13 @@ to meetings.
 5. **Paste notes or a transcript** tab: notes typed elsewhere (chat, email, another app) or a meeting transcript.
    Pick the date and the meeting (list read through `agenda.list_command`, or a title and a start time), paste, then
    **File it in Obsidian**. The text is kept in the transcripts folder of the vault, then Claude Code files it: pasted
-   notes complete the pen note of that meeting (a "typed notes" section, never reworded) or become a meeting note;
-   a transcript enriches the pen note (decisions and actions said but not written) or becomes a meeting note
-   without handwriting.
+   notes complete the note of that meeting (a "typed notes" section, never reworded) or become a meeting note;
+   a transcript becomes **meeting minutes** (decisions, actions, a short summary, open questions) added to the meeting
+   note, or a new meeting note. One note per meeting, whatever the sources.
+
+A vault from an earlier version (one folder per notebook, a `Meetings` folder) is moved to the single notes folder
+by `python .claude/skills/pen-notes/pen_tool.py migrate-folders --dry-run` (preview), then without `--dry-run`:
+notes and their reference copies move together, source tags are added, links keep working (Obsidian links by name).
 
 Interactively, open the repository in Claude Code and say "convert my pen notes" (`/pen-notes`).
 

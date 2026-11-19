@@ -23,11 +23,14 @@ REPO_ROOT = HERE.parents[2]
 APP = "stylo-neo-notes"
 
 LANGUAGES = ("en", "fr")
+# notes_dir holds every note, whatever its source (pen notebook, transcript, pasted notes): the source is a tag.
+# notebooks_dir and meetings_dir are the per-source folders of earlier versions, still read so that an older vault
+# keeps working until `pen_tool.py migrate-folders` moves its notes.
 DEFAULT_FOLDERS = {
-    "en": {"notebooks_dir": "Notebooks", "journal_dir": "Journal", "meetings_dir": "Meetings",
+    "en": {"notes_dir": "Notes", "journal_dir": "Journal", "notebooks_dir": "Notebooks", "meetings_dir": "Meetings",
            "attachments_dir": "Attachments/pen", "system_dir": "_pen", "transcripts_dir": "Inbox/Transcripts",
            "log_file": "Conversion log.md"},
-    "fr": {"notebooks_dir": "Carnets", "journal_dir": "Journal", "meetings_dir": "Réunions",
+    "fr": {"notes_dir": "Notes", "journal_dir": "Journal", "notebooks_dir": "Carnets", "meetings_dir": "Réunions",
            "attachments_dir": "Pièces jointes/stylo", "system_dir": "_stylo",
            "transcripts_dir": "Inbox/Transcriptions", "log_file": "Journal des conversions.md"},
 }
@@ -81,8 +84,9 @@ class Config:
     data_dir: Path | None
     exe: Path
     references: Path
-    notebooks_dir: str
+    notes_dir: str
     journal_dir: str
+    notebooks_dir: str
     meetings_dir: str
     attachments_dir: str
     system_dir: str
@@ -92,9 +96,16 @@ class Config:
     agenda: dict = field(default_factory=dict)
 
     @property
-    def tracked_dirs(self) -> tuple[str, str, str]:
-        """Vault folders holding the notes written by the converter."""
-        return self.notebooks_dir, self.journal_dir, self.meetings_dir
+    def tracked_dirs(self) -> tuple[str, ...]:
+        """Vault folders holding the notes written by the converter: the notes folder, the journal, and the
+        per-source folders of earlier versions (until the vault is migrated)."""
+        dirs = (self.notes_dir, self.journal_dir, self.notebooks_dir, self.meetings_dir)
+        return tuple(dict.fromkeys(dirs))   # unique, order kept
+
+    @property
+    def legacy_dirs(self) -> tuple[str, ...]:
+        """Per-source folders of earlier versions, emptied by `pen_tool.py migrate-folders`."""
+        return tuple(d for d in (self.notebooks_dir, self.meetings_dir) if d not in (self.notes_dir, self.journal_dir))
 
     def in_vault(self, rel: str) -> Path | None:
         """Absolute path of a vault folder or file (None when no vault is configured)."""
@@ -122,11 +133,12 @@ class Config:
         s = lambda p: str(p) if p is not None else None  # noqa: E731
         return {
             "config_file": s(self.config_file), "language": self.language, "timezone": self.timezone,
-            "vault": s(self.vault), "notebooks_dir": self.notebooks_dir, "journal_dir": self.journal_dir,
-            "meetings_dir": self.meetings_dir, "attachments_dir": self.attachments_dir,
+            "vault": s(self.vault), "notes_dir": self.notes_dir, "journal_dir": self.journal_dir,
+            "attachments_dir": self.attachments_dir,
             "system_dir": self.system_dir, "transcripts_dir": self.transcripts_dir, "log_file": self.log_file,
+            "legacy_dirs": list(self.legacy_dirs),
             "paths": {k: s(self.in_vault(getattr(self, k))) for k in (
-                "notebooks_dir", "journal_dir", "meetings_dir", "attachments_dir", "system_dir",
+                "notes_dir", "journal_dir", "attachments_dir", "system_dir",
                 "transcripts_dir")} | {"log_file": s(self.in_vault(f"{self.system_dir}/{self.log_file}"))},
             "data_dir": s(self.data_dir), "exe": s(self.exe), "references": s(self.references),
             "rotated_dir": s(self.rotated_dir), "agenda": self.agenda,

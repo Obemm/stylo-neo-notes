@@ -3,7 +3,10 @@
 Lessons learned while converting real pages. Apply them; add new ones (generic only: no names of people,
 companies or partners — those belong in the vault's glossary).
 
-- Diagrams in Mermaid (no Excalidraw), notes split by topic, filed by notebook. The conversion runs inside a
+- Notes are filed by day, time and subject in one folder; the source (notebook, transcript, pasted notes) is a tag,
+  never a folder: the user looks for a meeting by its date, not by where the notes came from. A transcript becomes
+  minutes (summary, decisions, actions), never a pasted copy.
+- Diagrams in Mermaid (no Excalidraw), notes split by topic. The conversion runs inside a
   Claude Code session: no API key needed.
 - The folded manuscript at the top of the note plus Mermaid below was validated as the default format. An
   uncertain proper noun marked `[?]` turned out to be right: keep that caution.
